@@ -69,11 +69,66 @@ không còn thuộc cấu hình contest hiện tại.
 | `DELETE` | `/admin/judge/problems/{problem_id}` | SUPER_ADMIN: xóa bài và dữ liệu phụ thuộc |
 | `GET` | `/student/problems?q=...` | Người dùng đăng nhập: tìm bài public theo tên |
 | `GET` | `/student/problems/{problem_id}` | Người dùng đăng nhập: đọc bài public |
+| `POST` | `/student/problems/{problem_id}/run` | Người dùng đăng nhập: chạy thử bài public với stdin tự nhập; không tạo bài nộp |
 | `POST` | `/student/problems/{problem_id}/submissions` | Nộp bài public và chấm qua Judge0 |
 | `GET` | `/student/languages` | Lấy ngôn ngữ đã đồng bộ |
 
 Giới hạn/đầu vào bài tập được định nghĩa bởi `ProblemCreateIn`,
 `ProblemUpdateIn`, `ProblemTestcaseIn` trong `backend/db/schemas.py`.
+
+### Chạy thử code trong mini IDE
+
+Hai endpoint `/run` chuyển source code và input tự nhập tới Judge0, dùng
+time limit và memory limit của bài. Request không nhận testcase ID hoặc
+expected output, không đọc hay trả test case ẩn và không tạo bản ghi
+`submission`; endpoint này chỉ trả kết quả để hiển thị trong mini IDE. Với
+bài public, yêu cầu chỉ chạy được nếu người dùng đã đăng nhập. Với bài trong
+lớp, người dùng phải là thành viên lớp và bài phải được gán vào lớp.
+
+Contest có thể dùng endpoint chạy thử trong lớp bằng cách truyền thêm
+`contest_id`. Khi đó bài phải thuộc contest được gán cho lớp, contest phải
+đang diễn ra và người dùng phải có quyền xem bài trong contest.
+Mỗi lượt chạy có thời hạn chờ Judge0 tối đa 15 giây; Judge0 còn áp dụng giới
+hạn CPU và bộ nhớ của bài.
+
+Request JSON:
+
+```json
+{
+  "language_id": 71,
+  "source_code": "print(input())",
+  "stdin": "hello\n",
+  "contest_id": 12
+}
+```
+
+`contest_id` là tùy chọn và chỉ dùng cho bài chạy thử trong lớp/contest.
+`source_code` bắt buộc, không chỉ có khoảng trắng và tối đa 65.536 ký tự;
+`stdin` mặc định là chuỗi rỗng và tối đa 16.384 ký tự. `language_id` phải
+tồn tại trong danh sách lấy từ `/student/languages`. Request model tương ứng
+là `StudentRunCodeIn` trong `backend/db/schemas.py`.
+
+Response thành công gồm trạng thái Judge0, stdout, stderr, output biên dịch và
+các metric có thể có:
+
+```json
+{
+  "status": "Accepted",
+  "status_id": 3,
+  "stdout": "hello\n",
+  "stderr": "",
+  "compile_output": "",
+  "runtime_ms": 25,
+  "memory_kb": 1024
+}
+```
+
+`status_id` là mã trạng thái Judge0; chỉ ID `3` là chạy thành công. Nếu
+chương trình không in stdout, giá trị là chuỗi rỗng. `runtime_ms` và
+`memory_kb` có thể là `null` nếu Judge0 không cung cấp metric. Lỗi kết nối
+Judge0 trả `503`, hết hạn chạy trả `504`, phản hồi Judge0 không hợp lệ trả
+`502`; input sai trả `422`, còn lỗi đăng nhập/quyền/tài nguyên dùng các mã
+`401`, `403`, `404` hoặc `409` tương ứng.
 
 ### Lớp học và phân quyền lớp
 
@@ -97,6 +152,7 @@ Giới hạn/đầu vào bài tập được định nghĩa bởi `ProblemCreate
 | `POST` | `/student/classes/{class_id}/join-requests` | Gửi yêu cầu vào lớp |
 | `GET` | `/student/classes/{class_id}` | Thành viên: xem bài, danh sách thành viên và contest của lớp |
 | `GET` | `/student/classes/{class_id}/submissions` | Lịch sử bài nộp trong lớp |
+| `POST` | `/student/classes/{class_id}/problems/{problem_id}/run` | Thành viên: chạy thử bằng stdin tự nhập; tùy chọn `contest_id` trong contest đang diễn ra |
 | `POST` | `/student/classes/{class_id}/problems/{problem_id}/submissions` | Nộp bài trong lớp |
 
 Quản trị lớp được xác định qua quan hệ `manage_class`; chủ lớp là quản trị
@@ -225,4 +281,5 @@ Từ thư mục `backend`:
 ```
 
 Các kiểm thử chính bao gồm API quản trị/lớp học, đăng nhập/session, xóa tài
-khoản và migration schema.
+khoản và migration schema; luồng chạy thử kiểm tra input tự nhập, quyền truy
+cập bài/lớp và bảo đảm không tạo submission.
