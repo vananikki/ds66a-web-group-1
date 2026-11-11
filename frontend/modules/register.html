@@ -38,6 +38,13 @@
                     <input type="password" id="confirm-password" name="confirm_password" maxlength="128" autocomplete="new-password" placeholder="Nhập lại mật khẩu" required>
                 </div>
 
+                <div class="terms-group" style="margin: 6px 0; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="terms-agree" style="width: 16px; min-height: 16px; margin: 0; cursor: pointer;" required>
+                    <label for="terms-agree" style="cursor: pointer; color: #374151;">
+                        Tôi đồng ý với <a href="javascript:void(0)" id="open-terms-link" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Điều khoản sử dụng</a> và Quy chế thi.
+                    </label>
+                </div>
+
                 <div class="form-actions">
                     <button type="submit">Tạo tài khoản</button>
                     <button type="button" class="secondary" id="login-button">Đăng nhập</button>
@@ -47,6 +54,22 @@
             <p id="status-message" class="message" role="status"></p>
         </section>
     </main>
+
+    <!-- Modal xem điều khoản sử dụng -->
+    <div id="terms-modal" class="modal-backdrop" style="display: none;">
+        <div class="modal-box">
+            <h3 style="margin-top: 0; color: #172554;">Điều khoản sử dụng Hệ thống Chấm bài</h3>
+            <div class="modal-content" style="max-height: 250px; overflow-y: auto; margin: 15px 0; font-size: 13px; line-height: 1.6; color: #4b5563;">
+                <p>1. Nghiêm cấm mọi hành vi gian lận, nộp mã độc hoặc cố tình tấn công máy chủ Judge qua các lệnh hệ thống.</p>
+                <p>2. Mỗi thí sinh chịu trách nhiệm bảo mật tài khoản cá nhân, không chia sẻ session đăng nhập.</p>
+                <p>3. Các bài nộp sẽ được lưu trữ phục vụ mục đích học tập và đối soát đạo văn.</p>
+            </div>
+            <div style="display: flex; justify-content: flex-end;">
+                <button type="button" id="close-terms-btn" class="button-link" style="padding: 6px 18px; min-height: 38px; cursor: pointer;">Đã hiểu và Đóng</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="../assets/js/register.js?v=20261029b"></script>
 </body>
 </html>

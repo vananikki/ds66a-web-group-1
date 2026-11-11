@@ -1,4 +1,5 @@
 import { apiFetch, readResponse } from "./api.js?v=20261029a";
+import { typesetMath } from "./latex.js?v=20261101b";
 
 const publicList = document.getElementById("public-problem-list");
 const ownedList = document.getElementById("owned-problem-list");
@@ -101,6 +102,9 @@ async function initialize() {
             );
         }
         document.getElementById("problem-filter").disabled = false;
+
+        // Biên dịch LaTeX cho toàn bộ danh sách bài tập vừa render
+        await typesetMath(document.getElementById("problem-bank-picker-layout") || document.body);
     } catch (error) {
         console.error(error);
         setMessage(error instanceof Error ? error.message : "Không thể tải kho bài tập.");
@@ -133,6 +137,9 @@ async function searchProblems(query) {
         const count = problems.length +
             owned.filter((problem) => problem.created_by === account.account_id).length;
         status.textContent = query ? `${count} bài phù hợp` : "";
+
+        // Biên dịch lại LaTeX sau khi lọc/tìm kiếm bài tập
+        await typesetMath(document.getElementById("problem-bank-picker-layout") || document.body);
     } catch (error) {
         if (requestId !== searchRequestId) return;
         console.error(error);

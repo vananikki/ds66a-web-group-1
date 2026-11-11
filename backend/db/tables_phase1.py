@@ -447,22 +447,22 @@ class ClassJoinRequest(Base):
     )
 
 
-try:
-    from db.tables_phase2 import (
-        AcademicClassContest,
-        AcademicClassProblem,
-        Contest,
-        Problem,
-        Submission,
-    )
-except ModuleNotFoundError:
-    from tables_phase2 import (
-        AcademicClassContest,
-        AcademicClassProblem,
-        Contest,
-        Problem,
-        Submission,
-    )
+# try:
+#     from db.tables_phase2 import (
+#         AcademicClassContest,
+#         AcademicClassProblem,
+#         Contest,
+#         Problem,
+#         Submission,
+#     )
+# except ModuleNotFoundError:
+#     from tables_phase2 import (
+#         AcademicClassContest,
+#         AcademicClassProblem,
+#         Contest,
+#         Problem,
+#         Submission,
+#     )
 
 Account.created_problems = relationship(
     "Problem",

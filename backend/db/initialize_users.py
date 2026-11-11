@@ -1,7 +1,8 @@
 from db.session import engine
 from db.tables_phase1 import Account, AccountRole, ph
 from sqlalchemy.orm import Session
-
+# Thêm import này để SQLAlchemy load đầy đủ registry của Problem, Contest, Submission
+import db.tables_phase2  # noqa: F401
 
 email = "admin@example.com"
 name = "Super Admin"

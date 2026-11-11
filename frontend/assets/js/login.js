@@ -4,6 +4,7 @@ const form = document.getElementById("login-form");
 const errorMessage = document.getElementById("error-message");
 const emailInput = document.getElementById("email");
 const params = new URLSearchParams(window.location.search);
+const googleLoginBtn = document.getElementById("btn-google-login");
 
 if (params.has("email")) {
     emailInput.value = params.get("email");
@@ -74,5 +75,12 @@ document.getElementById("login-form").addEventListener("input", () => {
     errorMessage.textContent = "";
     errorMessage.classList.remove("error", "success");
 });
+
+if (googleLoginBtn) {
+    googleLoginBtn.addEventListener("click", () => {
+        console.log("Trigger Google Login flow");
+        alert("Đã kết nối UI: Chờ Backend tích hợp OAuth2 Client ID!");
+    });
+}
 
 redirectIfLoggedIn();

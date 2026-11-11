@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bài tập | Online Judge</title>
     <link rel="stylesheet" href="../assets/css/styles.css?v=20261103b">
+    <!-- CodeMirror CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <!-- CodeMirror Material Darker Theme -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
 </head>
 <body>
     <main class="page-shell">
@@ -64,7 +68,7 @@
                         <select id="solution-language" name="language_id" required disabled></select>
                     </label>
                     <label>Mã nguồn
-                        <textarea name="source_code" rows="18" required maxlength="65536" spellcheck="false" placeholder="Nhập mã nguồn..." disabled></textarea>
+                        <textarea id="source-code" name="source_code" rows="18" required maxlength="65536" spellcheck="false" placeholder="Nhập mã nguồn..." disabled></textarea>
                     </label>
                     <button type="submit" disabled>Nộp và chấm bài</button>
                     <p id="submit-access-note" class="field-hint" hidden></p>
@@ -74,6 +78,15 @@
             <p id="page-message" class="message" role="alert"></p>
         </section>
     </main>
+
+    <!-- CodeMirror Core JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <!-- CodeMirror Modes: C/C++, Java, Python -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+
+    <!-- Project Scripts -->
     <script type="module" src="../assets/js/problem_submit.js?v=20261103b"></script>
+    <script src="../assets/js/nav_active.js"></script>
 </body>
 </html>

@@ -2,14 +2,46 @@ import { apiFetch, readResponse } from "./api.js?v=20261029a";
 
 const form = document.getElementById("register-form");
 const statusMessage = document.getElementById("status-message");
+const openTerms = document.getElementById("open-terms-link");
+const closeTerms = document.getElementById("close-terms-btn");
+const modal = document.getElementById("terms-modal");
+const termsCheckbox = document.getElementById("terms-agree");
 
 document.getElementById("login-button").addEventListener("click", () => {
     window.location.href = "login.html";
 });
 
+// Xử lý mở / đóng Modal Điều khoản
+if (openTerms && modal) {
+    openTerms.addEventListener("click", () => {
+        modal.style.display = "flex";
+    });
+}
+
+if (closeTerms && modal) {
+    closeTerms.addEventListener("click", () => {
+        modal.style.display = "none";
+    });
+}
+
+if (modal) {
+    modal.addEventListener("click", (event) => {
+        if (event.target === modal) {
+            modal.style.display = "none";
+        }
+    });
+}
+
 form.addEventListener("submit", async (event) => {
     event.preventDefault();
     statusMessage.textContent = "";
+
+    // Kiểm tra checkbox điều khoản
+    if (termsCheckbox && !termsCheckbox.checked) {
+        alert("Vui lòng đọc và tích đồng ý với Điều khoản sử dụng trước khi tạo tài khoản!");
+        termsCheckbox.focus();
+        return;
+    }
 
     const accountName = document.getElementById("account-name").value.trim();
     const email = document.getElementById("email").value.trim();

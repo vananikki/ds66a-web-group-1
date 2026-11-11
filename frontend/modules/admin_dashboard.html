@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bảng điều khiển Quản trị viên | Online Judge</title>
+    <link rel="stylesheet" href="../assets/css/styles.css">
+    <style>
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin: 24px 0 32px 0;
+        }
+        .stat-card {
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .stat-card h4 {
+            margin: 0;
+            color: #64748b;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .stat-card .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-top: 10px;
+        }
+        .admin-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+        .action-card-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 20px;
+            background: #2563eb;
+            color: #ffffff !important;
+            font-weight: 600;
+            font-size: 14px;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+        }
+        .action-card-link:hover {
+            background: #1d4ed8;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(37, 99, 235, 0.25);
+        }
+    </style>
+</head>
+<body>
+    <main class="page-shell">
+        <header class="site-header">
+            <a class="brand" href="index.html">
+                <span class="brand-mark" aria-hidden="true">OJ</span>
+                <span>Online Judge</span>
+            </a>
+            <div class="button-row">
+                <a href="index.html">Tài khoản</a>
+                <a href="classroom_list.html">Lớp học</a>
+                <a href="problems.html">Kho bài tập</a>
+                <a href="submissions.html">Lịch sử bài nộp</a>
+                <a href="admin_dashboard.html" class="active">Bảng điều khiển</a>
+                <a href="manage_accounts.html">Quản lý tài khoản</a>
+                <button id="logout-button" class="secondary" type="button">Đăng xuất</button>
+            </div>
+        </header>
+
+        <section class="card dashboard-card">
+            <div>
+                <p class="eyebrow">QUẢN TRỊ VIÊN TỐI CAO</p>
+                <h1>Bảng điều khiển Super Admin</h1>
+                <p class="page-subtitle">Xem tổng quan chỉ số hệ thống, trạng thái dịch vụ chấm và phím tắt quản trị.</p>
+            </div>
+
+            <!-- Thẻ thống kê số liệu -->
+            <div class="dashboard-grid">
+                <div class="stat-card">
+                    <h4>Tổng số Tài khoản</h4>
+                    <div class="stat-value" id="stat-total-users">--</div>
+                </div>
+                <div class="stat-card">
+                    <h4>Cuộc thi đang chạy</h4>
+                    <div class="stat-value" id="stat-active-contests">--</div>
+                </div>
+                <div class="stat-card">
+                    <h4>Bài nộp hôm nay</h4>
+                    <div class="stat-value" id="stat-submissions-today">--</div>
+                </div>
+                <div class="stat-card">
+                    <h4>Máy chủ chấm (Judge0)</h4>
+                    <div class="stat-value" style="color: #16a34a; font-size: 22px;">Hoạt động</div>
+                </div>
+            </div>
+
+            <!-- Phím tắt chức năng quản lý -->
+            <h3>Thao tác Quản trị</h3>
+            <div class="admin-actions">
+                <a href="manage_accounts.html" class="action-card-link">Quản lý Phân quyền Tài khoản</a>
+                <a href="create_problem.html" class="action-card-link">Tạo bài tập mới vào Ngân hàng</a>
+                <a href="judge_admin.html" class="action-card-link">Cấu hình Tham số Sandbox</a>
+            </div>
+
+            <p id="page-message" class="message" role="alert" style="margin-top: 20px;"></p>
+        </section>
+    </main>
+
+    <script type="module" src="../assets/js/admin_dashboard.js"></script>
+    <script src="../assets/js/nav_active.js"></script>
+</body>
+</html>

@@ -9,6 +9,7 @@ const statement = document.getElementById("problem-statement");
 const form = document.getElementById("solution-form");
 const pageMessage = document.getElementById("page-message");
 let languagesPromise;
+let editor; // Khai báo instance CodeMirror
 
 function showMessage(element, text, isError = false) {
     element.textContent = text;
@@ -48,6 +49,19 @@ function renderStatement(problem) {
     statement.hidden = false;
 }
 
+function updateEditorLanguageMode() {
+    if (!editor) return;
+    const selector = document.getElementById("solution-language");
+    const selectedText = selector.options[selector.selectedIndex]?.text?.toLowerCase() || "";
+    if (selectedText.includes("python")) {
+        editor.setOption("mode", "python");
+    } else if (selectedText.includes("java")) {
+        editor.setOption("mode", "text/x-java");
+    } else {
+        editor.setOption("mode", "text/x-c++src");
+    }
+}
+
 async function loadLanguages() {
     languagesPromise ??= requestJson("/student/languages");
     const languages = await languagesPromise;
@@ -62,6 +76,7 @@ async function loadLanguages() {
     if (!languages.length) {
         throw new Error("Chưa có ngôn ngữ chấm bài. Hãy đồng bộ danh sách Judge0 languages trước.");
     }
+    updateEditorLanguageMode();
 }
 
 async function loadClassProblem(account) {
@@ -97,7 +112,25 @@ async function loadClassProblem(account) {
     return { problem, canSubmit };
 }
 
+function initCodeMirror() {
+    const codeTextarea = document.getElementById("source-code") || form.elements.source_code;
+    if (codeTextarea && !editor && window.CodeMirror) {
+        editor = window.CodeMirror.fromTextArea(codeTextarea, {
+            lineNumbers: true,
+            mode: "text/x-c++src",
+            theme: "material-darker",
+            indentUnit: 4,
+            tabSize: 4,
+            indentWithTabs: false,
+            lineWrapping: true,
+            readOnly: "nocursor", // Khởi tạo tạm ở trạng thái khóa
+        });
+    }
+}
+
 async function initialize() {
+    initCodeMirror();
+
     if (!problemId || !/^[1-9]\d*$/.test(problemId)) {
         showMessage(pageMessage, "Đường dẫn bài tập không hợp lệ.", true);
         return;
@@ -133,9 +166,14 @@ async function initialize() {
                 : `/admin/judge/problems/${encodeURIComponent(problemId)}`;
             problem = await requestJson(problemPath);
         }
+        
         renderStatement(problem);
+        const solutionHeading = document.getElementById("solution-heading");
+        solutionHeading.textContent = problem.problem_name;
+
+        // Biên dịch LaTeX cho cả khung đề bài bên trái VÀ tiêu đề bên phải
         await typesetMath(statement);
-        document.getElementById("solution-heading").textContent = problem.problem_name;
+        await typesetMath(solutionHeading);
 
         const historyLink = document.getElementById("problem-history-link");
         historyLink.href = `submissions.html?problem_id=${encodeURIComponent(problemId)}`;
@@ -144,6 +182,7 @@ async function initialize() {
             document.getElementById("solution-heading").textContent = "Chỉ xem đề bài";
             document.getElementById("solution-language").parentElement.hidden = true;
             form.elements.source_code.parentElement.hidden = true;
+            if (editor) editor.getWrapperElement().hidden = true;
             form.querySelector('[type="submit"]').hidden = true;
             const accessNote = document.getElementById("submit-access-note");
             accessNote.textContent =
@@ -159,7 +198,7 @@ async function initialize() {
             document.getElementById("solution-language").hidden = true;
             document.getElementById("solution-language").parentElement.hidden = true;
             form.elements.source_code.disabled = true;
-            form.elements.source_code.placeholder = "Bài private/hidden cần được nộp từ trang lớp hoặc contest.";
+            if (editor) editor.setOption("readOnly", "nocursor");
             submitButton.hidden = true;
             showMessage(
                 document.getElementById("submission-result"),
@@ -171,6 +210,10 @@ async function initialize() {
         await loadLanguages();
         document.getElementById("solution-language").disabled = false;
         form.elements.source_code.disabled = false;
+        if (editor) {
+            editor.setOption("readOnly", false);
+            editor.refresh();
+        }
         submitButton.disabled = false;
     } catch (error) {
         console.error(error);
@@ -182,11 +225,23 @@ async function initialize() {
     }
 }
 
+// Bắt sự kiện thay đổi ngôn ngữ để đổi syntax highlight
+document.getElementById("solution-language").addEventListener("change", updateEditorLanguageMode);
+
 form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const submitButton = form.querySelector('[type="submit"]');
     const result = document.getElementById("submission-result");
     const values = new FormData(form);
+
+    // Lấy mã nguồn từ editor CodeMirror nếu có, fallback về textarea
+    const code = editor ? editor.getValue() : (values.get("source_code") || "");
+    if (!code.trim()) {
+        showMessage(result, "Vui lòng nhập mã nguồn trước khi nộp.", true);
+        if (editor) editor.focus();
+        return;
+    }
+
     submitButton.disabled = true;
     showMessage(result, "Đang gửi lời giải tới hệ thống chấm bài...");
     try {
@@ -199,7 +254,7 @@ form.addEventListener("submit", async (event) => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     language_id: Number(values.get("language_id")),
-                    source_code: values.get("source_code"),
+                    source_code: code,
                 }),
             },
         );

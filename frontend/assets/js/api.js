@@ -140,3 +140,43 @@ export async function readResponse(response) {
 
     return {};
 }
+
+// ====================================================
+// TỰ ĐỘNG GẮN CLASS ACTIVE CHO NAVBAR / SIDEBAR
+// ====================================================
+export function updateActiveNavLinks() {
+    const currentPath = window.location.pathname.split("/").filter(Boolean).pop() || "index.html";
+    const navLinks = document.querySelectorAll(".site-header a, header nav a, .nav-item, .nav-link");
+    const pageHeading = document.querySelector("h1")?.textContent?.trim().toLowerCase() || "";
+
+    navLinks.forEach((link) => {
+        if (link.classList.contains("brand") || link.id === "logout-button") return;
+
+        const href = link.getAttribute("href") || "";
+        const cleanHref = href.split("?")[0].split("#")[0].split("/").filter(Boolean).pop();
+        const linkText = link.textContent.trim().toLowerCase();
+
+        // 1. Kiểm tra khớp tên file HTML trên URL
+        let isMatch = cleanHref && currentPath === cleanHref;
+
+        // 2. Dự phòng: Nếu URL là index.html nhưng đang đứng ở trang Kho bài tập
+        if (!isMatch && pageHeading.includes("kho bài tập") && linkText.includes("kho bài tập")) {
+            isMatch = true;
+        }
+
+        if (isMatch) {
+            link.classList.add("active");
+            link.setAttribute("aria-current", "page");
+        } else {
+            link.classList.remove("active");
+            link.removeAttribute("aria-current");
+        }
+    });
+}
+
+// Chạy hàm ngay khi script nạp và khi DOM sẵn sàng
+updateActiveNavLinks();
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", updateActiveNavLinks);
+}
+window.addEventListener("load", updateActiveNavLinks);

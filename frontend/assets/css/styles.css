@@ -3014,3 +3014,433 @@ tbody tr:last-child td {
         transition-duration: 0.01ms !important;
     }
 }
+
+/* ====================================================
+   ĐỒNG BỘ GIAO DIỆN NAVBAR / SIDEBAR & ACTIVE STATE
+   ==================================================== */
+.sidebar-nav,
+.navbar-nav,
+.nav-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/* Kiểu mặc định đồng bộ cho mọi nút/link điều hướng */
+.nav-item,
+.nav-link,
+.sidebar-nav a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 44px;
+    padding: 10px 14px;
+    border: 1.5px solid transparent; /* Giữ chỗ trước để khi active không bị giật layout */
+    border-radius: 10px;
+    color: #4b5563; /* Màu xám trung tính đồng bộ */
+    background-color: transparent;
+    font-size: 0.95rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 180ms ease-in-out;
+}
+
+/* Hiệu ứng rê chuột */
+.nav-item:hover,
+.nav-link:hover,
+.sidebar-nav a:hover {
+    color: #1f2937;
+    background-color: #f3f6ff;
+    border-color: #d5def4;
+    text-decoration: none;
+    transform: translateX(2px);
+}
+
+/* Trạng thái ACTIVE: Trang hiện tại người dùng đang truy cập */
+.nav-item.active,
+.nav-link.active,
+.sidebar-nav a.active,
+.nav-item[aria-current="page"] {
+    color: #2563eb !important;              /* Màu xanh thương hiệu nổi bật */
+    background-color: #eff6ff !important;   /* Nền xanh nhạt tạo độ sâu */
+    border: 1.5px solid #2563eb !important; /* Border bao quanh sắc nét */
+    font-weight: 700 !important;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.12) !important;
+}
+
+.nav-item:focus-visible,
+.nav-link:focus-visible {
+    outline: 3px solid #a8c1ff;
+    outline-offset: 2px;
+}
+
+/* ====================================================
+   ĐỒNG BỘ HEADER NAVBAR: MÀU ĐỒNG NHẤT & BORDER ACTIVE
+   ==================================================== */
+.site-header nav,
+.site-header .nav-links,
+header nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* 1. Mọi link trên nav đều cùng màu xám đậm, bỏ gạch chân mặc định */
+.site-header a:not(.brand):not(.button-link):not(#logout-button),
+.site-header nav a,
+header nav a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 7px 14px;
+    border-radius: 8px;
+    border: 1.5px solid transparent; /* Giữ sẵn chỗ để khi active không bị giật vị trí */
+    color: #4b5563 !important;        /* Đồng bộ màu xám trung tính cho tất cả các tab */
+    background: transparent;
+    font-size: 0.95rem;
+    font-weight: 500;
+    text-decoration: none !important; /* Xóa gạch chân màu xanh */
+    transition: all 0.15s ease-in-out;
+}
+
+/* 2. Hiệu ứng hover nhẹ nhàng */
+.site-header a:not(.brand):not(.button-link):not(#logout-button):hover,
+.site-header nav a:hover,
+header nav a:hover {
+    color: #1e293b !important;
+    background-color: #f1f5f9;
+    text-decoration: none !important;
+}
+
+/* 3. Tab ĐANG ACTIVE: Chữ xanh, nền xanh nhạt, viền border xanh bao quanh */
+.site-header a.active:not(.brand):not(.button-link),
+.site-header nav a.active,
+header nav a.active {
+    color: #2563eb !important;               /* Xanh thương hiệu */
+    background-color: #eff6ff !important;    /* Nền highlight nhẹ */
+    border: 1.5px solid #2563eb !important;  /* Viền border bao quanh sắc nét */
+    font-weight: 700 !important;
+    text-decoration: none !important;
+}
+
+/* ====================================================
+   THANH ĐIỀU HƯỚNG NGANG (HEADER NAVBAR) - THEME XANH
+   ==================================================== */
+.site-header nav,
+.site-header .nav-links,
+header nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+}
+
+/* 1. Trạng thái bình thường của tất cả các tab: Nền xanh nhạt, chữ xanh */
+.site-header a:not(.brand):not(#logout-button),
+.site-header nav a,
+header nav a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    border-radius: 9px;
+    border: 1.5px solid #d4e2fc !important;
+    background-color: #edf3ff !important; /* Nền xanh pastel dịu nhẹ */
+    color: #2563eb !important;            /* Chữ xanh thương hiệu */
+    font-size: 0.92rem;
+    font-weight: 550;
+    text-decoration: none !important;
+    transition: all 0.15s ease-in-out;
+}
+
+/* 2. Hiệu ứng khi rê chuột (Hover) */
+.site-header a:not(.brand):not(#logout-button):hover,
+.site-header nav a:hover,
+header nav a:hover {
+    background-color: #dbe7fe !important; /* Xanh đậm hơn một chút khi hover */
+    border-color: #93b9f8 !important;
+    color: #1d4ed8 !important;
+    transform: translateY(-1px);
+    text-decoration: none !important;
+}
+
+/* 3. Tab ĐANG ACTIVE (Trang hiện tại): Nền xanh đậm, chữ trắng in đậm */
+.site-header a.active:not(.brand):not(#logout-button),
+.site-header nav a.active,
+header nav a.active {
+    background-color: #2563eb !important; /* Nền xanh đậm nổi bật */
+    border-color: #1d4ed8 !important;
+    color: #ffffff !important;            /* Chữ trắng tinh phản tương phản cao */
+    font-weight: 750 !important;          /* Chữ in đậm */
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25) !important;
+}
+
+/* Giữ nút Đăng xuất là nút màu viền trắng/xám riêng biệt để không bị nhầm tab */
+#logout-button {
+    font-weight: 600;
+}
+
+/* Trạng thái ACTIVE bắt buộc: Nền xanh đậm, chữ trắng, in đậm */
+.site-header a.active,
+.site-header nav a.active,
+header nav a.active,
+a.nav-link.active,
+a.nav-item.active {
+    background: #2563eb !important;
+    background-color: #2563eb !important;
+    border-color: #1d4ed8 !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3) !important;
+}
+
+/* Đảm bảo khi hover vào tab active thì chữ vẫn giữ màu trắng */
+.site-header a.active:hover,
+header nav a.active:hover {
+    background-color: #1d4ed8 !important;
+    color: #ffffff !important;
+}
+
+/* ====================================================
+   RESPONSIVE HEADER & MOBILE HAMBURGER MENU
+   ==================================================== */
+.site-header {
+  position: relative;
+  z-index: 1000;
+}
+
+/* Nút 3 gạch mở menu trên điện thoại */
+.mobile-toggle-btn {
+  display: none; /* Mặc định ẩn trên máy tính */
+  flex-direction: column;
+  justify-content: space-around;
+  width: 38px;
+  height: 38px;
+  padding: 8px 6px;
+  background: #edf3ff;
+  border: 1.5px solid #d4e2fc;
+  border-radius: 8px;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.mobile-toggle-btn span {
+  width: 100%;
+  height: 2.5px;
+  background-color: #2563eb;
+  border-radius: 2px;
+  transition: all 0.25s ease-in-out;
+}
+
+/* Hiệu ứng xoay thành dấu X khi menu mở */
+.mobile-toggle-btn.open span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+.mobile-toggle-btn.open span:nth-child(2) {
+  opacity: 0;
+}
+.mobile-toggle-btn.open span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+/* ====================================================
+   GIAO DIỆN MOBILE (< 768px)
+   ==================================================== */
+@media (max-width: 768px) {
+  .site-header {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .mobile-toggle-btn {
+    display: flex; /* Hiện nút trên mobile */
+  }
+
+  /* Menu xổ dọc trên mobile */
+  .site-header nav,
+  .site-header .nav-links,
+  header nav {
+    display: none; /* Ẩn menu mặc định */
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 14px;
+    margin-top: 8px;
+    background: #ffffff;
+    border: 1px solid #dce5f2;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(37, 67, 128, 0.12);
+  }
+
+  /* Khi bấm nút hamburger thì hiện menu */
+  .site-header nav.show,
+  .site-header .nav-links.show,
+  header nav.show {
+    display: flex !important;
+  }
+
+  /* Các tab chiếm full chiều ngang trên mobile */
+  .site-header a:not(.brand),
+  .site-header nav a,
+  header nav a,
+  #logout-button {
+    width: 100%;
+    min-height: 44px;
+    box-sizing: border-box;
+    justify-content: center;
+  }
+}
+
+/* ====================================================
+   GIỮ CÁC TAB NẰM TRÊN CÙNG 1 HÀNG NGANG (KHÔNG RỚT DÒNG)
+   ==================================================== */
+.site-header nav,
+.site-header .nav-links,
+header nav {
+    display: flex;
+    flex-wrap: nowrap !important;     /* Cấm rớt dòng tuyệt đối */
+    align-items: center;
+    gap: 6px;                         /* Thu hẹp khoảng cách giữa các nút */
+    overflow-x: auto;                 /* Nếu màn hình hẹp hơn thì cho trượt ngang thay vì vỡ dòng */
+    scrollbar-width: none;            /* Ẩn thanh cuộn trên Firefox */
+    -ms-overflow-style: none;         /* Ẩn thanh cuộn trên IE/Edge */
+}
+
+/* Ẩn thanh cuộn trên Chrome / Safari */
+.site-header nav::-webkit-scrollbar,
+header nav::-webkit-scrollbar {
+    display: none;
+}
+
+/* Căn chỉnh kích thước chữ và khoảng đệm gọn hơn */
+.site-header a:not(.brand),
+.site-header nav a,
+header nav a {
+    white-space: nowrap !important;   /* Không cho chữ trong tab ngắt dòng */
+    padding: 6px 11px !important;     /* Giảm padding để tiết kiệm diện tích */
+    font-size: 0.85rem !important;    /* Chỉnh chữ gọn vừa vặn */
+    flex-shrink: 0;                   /* Không làm bẹp nội dung nút */
+}
+
+/* ====================================================
+   NÚT ĐĂNG NHẬP GOOGLE & ĐƯỜNG KẺ PHÂN CÁCH
+   ==================================================== */
+.auth-divider {
+    display: flex;
+    align-items: center;
+    margin: 18px 0;
+    color: #9ca3af;
+    font-size: 13px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.auth-divider span {
+    padding: 0 10px;
+    text-transform: uppercase;
+    font-weight: 500;
+}
+
+.btn-google {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 16px;
+    background: #ffffff !important;
+    color: #374151 !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 9px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease;
+}
+
+.btn-google:hover {
+    background-color: #f9fafb !important;
+    border-color: #9ca3af !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    transform: translateY(-1px);
+}
+
+.btn-google .google-icon {
+    flex-shrink: 0;
+}
+
+/* ====================================================
+   MODAL ĐIỀU KHOẢN SỬ DỤNG (TERMS OF SERVICE)
+   ==================================================== */
+.modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.modal-box {
+    background: #ffffff;
+    padding: 24px;
+    border-radius: 14px;
+    width: 90%;
+    max-width: 480px;
+    box-shadow: 0 20px 40px rgba(15, 23, 42, 0.25);
+    border: 1px solid #dce5f2;
+    animation: modalFadeIn 0.2s ease-out;
+}
+
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* ====================================================
+   TÙY CHỈNH GIAO DIỆN KHUNG SOẠN THẢO CODEMIRROR
+   ==================================================== */
+.CodeMirror {
+    height: 480px !important;
+    border-radius: 8px;
+    font-family: 'Consolas', 'Fira Code', 'Monaco', 'Courier New', monospace !important;
+    font-size: 14px !important;
+    line-height: 1.5 !important;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+    border: 1px solid #334155;
+    margin-top: 6px;
+}
+
+.CodeMirror-gutters {
+    border-right: 1px solid #334155 !important;
+    background-color: #1e293b !important;
+}
+
+.CodeMirror-linenumber {
+    color: #94a3b8 !important;
+}

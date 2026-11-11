@@ -676,20 +676,42 @@ if (cancelCreateClassButton && createClassForm) {
 if (createClassForm) {
     createClassForm.addEventListener("submit", async (event) => {
         event.preventDefault();
-        const button = createClassForm.querySelector('[type="submit"]');
+        const form = event.currentTarget;
+        const button = form.querySelector('[type="submit"]');
+        const className = new FormData(form).get("class_name")?.toString().trim();
+
+        if (!className) {
+            setMessage(document.getElementById("create-class-message"), "Vui lòng nhập tên lớp học.", true);
+            return;
+        }
+
         button.disabled = true;
         try {
-            await requestJson("/admin/judge/academic-classes", {
+            const response = await apiFetch("/admin/judge/academic-classes", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ class_name: new FormData(createClassForm).get("class_name") }),
+                body: JSON.stringify({ class_name: className }),
             });
-            createClassForm.reset();
-            createClassForm.hidden = true;
-            setMessage(document.getElementById("create-class-message"), "Đã tạo lớp mới. Bạn đang là chủ lớp.");
-            await loadAdminClasses();
-        } catch (error) {
-            setMessage(document.getElementById("create-class-message"), error.message, true);
+
+            if (response.ok) {
+                form.reset();
+                form.hidden = true;
+                setMessage(document.getElementById("create-class-message"), "Đã tạo lớp mới. Bạn đang là chủ lớp.", false);
+                await loadAdminClasses();
+            } else {
+                let errorMsg = `Yêu cầu thất bại (${response.status})`;
+                try {
+                    const errorData = await readResponse(response);
+                    if (errorData?.detail) errorMsg = errorData.detail;
+                } catch {
+                    const fallbackText = await response.text();
+                    if (fallbackText) errorMsg = fallbackText;
+                }
+                setMessage(document.getElementById("create-class-message"), errorMsg, true);
+            }
+        } catch (networkError) {
+            console.error("Lỗi tạo lớp:", networkError);
+            setMessage(document.getElementById("create-class-message"), "Lỗi kết nối máy chủ.", true);
         } finally {
             button.disabled = false;
         }

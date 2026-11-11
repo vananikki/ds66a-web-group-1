@@ -16,7 +16,7 @@ from sqlalchemy.orm import (
 )
 
 
-from tables_phase3 import Language
+from db.tables_phase2 import Language
 
 
 class Base(DeclarativeBase):
@@ -27,7 +27,7 @@ class Base(DeclarativeBase):
 # 1. Load environment variables
 # =====================================================
 
-ENV_PATH = Path(__file__).resolve().parent / ".env"
+ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(ENV_PATH)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -52,52 +52,13 @@ if not DATABASE_URL:
 # =====================================================
 
 def fetch_languages():
-    url = f"{JUDGE0_URL}/languages"
-
-    response = requests.get(url, timeout=15)
-    response.raise_for_status()
-
-    data = response.json()
-
-    if not isinstance(data, list):
-        raise ValueError(
-            "Judge0 không trả về danh sách ngôn ngữ hợp lệ."
-        )
-
-    languages = []
-
-    for item in data:
-        language_id = item.get("id")
-        name = item.get("name")
-
-        if (
-            not isinstance(language_id, int)
-            or isinstance(language_id, bool)
-            or not isinstance(name, str)
-            or not name.strip()
-        ):
-            raise ValueError(
-                f"Dữ liệu ngôn ngữ không hợp lệ: {item}"
-            )
-
-        languages.append({
-            "language_id": language_id,
-            "name": name.strip(),
-        })
-
-    if not languages:
-        raise ValueError(
-            "Judge0 không trả về ngôn ngữ nào."
-        )
-
-    ids = [item["language_id"] for item in languages]
-
-    if len(ids) != len(set(ids)):
-        raise ValueError(
-            "Danh sách Judge0 chứa language ID bị trùng."
-        )
-
-    return languages
+    return [
+        {"language_id": 54, "name": "C++ (GCC 9.2.0)"},
+        {"language_id": 62, "name": "Java (OpenJDK 13.0.1)"},
+        {"language_id": 71, "name": "Python (3.8.1)"},
+        {"language_id": 50, "name": "C (GCC 9.2.0)"},
+        {"language_id": 63, "name": "JavaScript (Node.js 12.14.0)"},
+    ]
 
 
 # =====================================================
