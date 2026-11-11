@@ -57,6 +57,11 @@ theo vị trí của project. Chỉ tự nhập các giá trị phù hợp với
 | `SESSION_COOKIE_SECURE` | Tùy chọn | Bật `true` khi frontend/backend dùng HTTPS; để `false` khi phát triển qua HTTP |
 | `GOOGLE_CREDENTIALS_PATH` | Khi dùng email | Đường dẫn tới tệp OAuth client credentials của Google |
 | `GOOGLE_TOKEN_PATH` | Tùy chọn | Nơi lưu token OAuth được tạo khi cấp quyền; mặc định là `backend/token.json` |
+| `GOOGLE_CLIENT_ID` | Khi dùng đăng nhập Google | OAuth 2.0 Client ID loại Web |
+| `GOOGLE_CLIENT_SECRET` | Khi dùng đăng nhập Google | Client secret tương ứng, chỉ lưu phía backend |
+| `GOOGLE_CLIENT_SECRETS_FILE` | Khi dùng đăng nhập Google | Đường dẫn tới tệp JSON OAuth client loại Web; thay thế được hai biến ID/secret |
+| `GOOGLE_REDIRECT_URI` | Khi dùng đăng nhập Google | Callback URI đã đăng ký; mặc định `http://localhost:8000/auth/google/callback` |
+| `FRONTEND_BASE_URL` | Tùy chọn | Origin frontend sau đăng nhập; mặc định `http://localhost:5500` |
 
 Các origin localhost thường dùng đã được cấu hình sẵn. Nếu dùng địa chỉ hoặc
 cổng frontend khác, thêm origin chính xác vào `CORS_ORIGINS`, ví dụ dạng
@@ -67,6 +72,21 @@ Giữ `.env`, tệp OAuth credentials và token OAuth trên máy chủ, giới h
 nơi riêng tư có thể ghi được; token sẽ được tạo sau lần xác thực OAuth đầu
 tiên. Nếu không cấu hình Gmail, backend vẫn có thể chạy nhưng đăng ký/xác
 thực email và đặt lại mật khẩu sẽ không gửi được email.
+
+Để bật đăng nhập Google, tạo OAuth Client loại Web trong Google Cloud và thêm
+chính xác giá trị `GOOGLE_REDIRECT_URI` vào Authorized redirect URIs. Dùng
+Client ID và secret riêng cho backend hoặc trỏ
+`GOOGLE_CLIENT_SECRETS_FILE` tới JSON của client Web; không dùng tệp
+credentials/token của Gmail. Tệp JSON và `.env` chứa thông tin nhạy cảm, phải
+giữ ngoài Git và không chia sẻ công khai.
+
+Callback phải dùng địa chỉ trình duyệt truy cập được, không nhất thiết là cổng
+backend nội bộ. Ví dụ backend nghe ở `localhost:8000` nhưng được port-forward
+thành `localhost:8001`, cấu hình và đăng ký
+`http://localhost:8001/auth/google/callback` trong cả `.env`, JSON client Web
+và Google Cloud. Giữ nguyên hostname ở frontend, callback và luồng đăng nhập;
+không trộn `localhost` với `127.0.0.1`. Sau khi sửa cấu hình OAuth phải khởi
+động lại backend và bắt đầu một lượt đăng nhập mới.
 
 ## 5. Tạo schema
 

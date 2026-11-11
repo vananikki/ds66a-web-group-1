@@ -133,6 +133,14 @@ export async function apiFetch(path, options = {}) {
     }
 }
 
+export async function getApiBaseUrl() {
+    const response = await apiFetch("/");
+    if (!response.ok) {
+        throw new Error(`Không thể kết nối đến server (${response.status}).`);
+    }
+    return apiBaseUrl;
+}
+
 export async function readResponse(response) {
     if (response.headers.get("content-type")?.includes("application/json")) {
         return response.json();

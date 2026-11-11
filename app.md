@@ -58,11 +58,15 @@ quyền vẫn được xác minh ở API.
 ```text
 Đăng ký -> gửi mã email -> xác thực -> đăng nhập -> dashboard
                                    └-> quên mật khẩu -> mã email -> đặt lại
+
+Đăng nhập Google -> xác thực OAuth -> dashboard
 ```
 
 Sau đăng nhập, session cookie được backend kiểm tra trên các trang cần bảo vệ.
 Người dùng có thể xem/cập nhật tên hiển thị và đăng xuất; SUPER_ADMIN mở khu
 vực quản lý tài khoản để thay đổi vai trò hoặc xóa tài khoản theo quy tắc bảo vệ.
+Đăng nhập Google dùng email đã xác minh để đăng nhập tài khoản trùng email hoặc
+tạo tài khoản USER mới; vai trò tài khoản có sẵn không bị thay đổi.
 
 ## Luyện tập bài public
 

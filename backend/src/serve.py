@@ -15,7 +15,9 @@ async def serve() -> None:
     listener.setblocking(False)
 
     try:
-        server = uvicorn.Server(uvicorn.Config(app, host="::", port=8000))
+        server = uvicorn.Server(
+            uvicorn.Config(app, host="::", port=8000, access_log=False)
+        )
         await server.serve(sockets=[listener])
     finally:
         listener.close()

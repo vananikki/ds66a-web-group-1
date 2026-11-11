@@ -38,6 +38,8 @@ Chi tiết request/response có thể xem tại OpenAPI `/docs` khi backend đan
 | `POST` | `/auth/send-code`, `/auth/send-otp` | Gửi mã xác thực email |
 | `POST` | `/auth/verify-code`, `/auth/verify-otp` | Xác thực email |
 | `POST` | `/auth/login` | Đăng nhập và tạo cookie/session |
+| `GET` | `/auth/google` | Bắt đầu OAuth Google, đặt cookie `state` và PKCE |
+| `GET` | `/auth/google/callback` | Kiểm tra `state`/PKCE, xác minh ID token và email, tạo session |
 | `POST` | `/auth/logout` | Xóa session hiện tại và cookie |
 | `GET`, `PATCH` | `/auth/me` | Đọc hồ sơ hiện tại; cập nhật tên |
 | `POST` | `/auth/forgot-password` | Gửi mã đặt lại mật khẩu |
@@ -141,6 +143,30 @@ hoặc quyền quản lý contest theo phạm vi. Schema và chính sách lưu s
 | `CORS_ORIGINS` | Danh sách origin frontend, phân tách bằng dấu phẩy |
 | `GOOGLE_CREDENTIALS_PATH` | Đường dẫn OAuth credentials cho Gmail |
 | `GOOGLE_TOKEN_PATH` | Đường dẫn token OAuth; mặc định `backend/token.json` |
+| `GOOGLE_CLIENT_ID` | OAuth 2.0 Client ID loại Web cho đăng nhập Google |
+| `GOOGLE_CLIENT_SECRET` | Client secret tương ứng; chỉ lưu ở backend |
+| `GOOGLE_CLIENT_SECRETS_FILE` | Đường dẫn tệp JSON OAuth client loại Web; có thể dùng thay cho ID/secret riêng |
+| `GOOGLE_REDIRECT_URI` | Callback đã đăng ký trong Google Cloud; mặc định `http://localhost:8000/auth/google/callback` |
+| `FRONTEND_BASE_URL` | Origin frontend sau đăng nhập; mặc định `http://localhost:5500` |
+
+Đăng nhập Google cần cấu hình OAuth Client loại Web trong Google Cloud, bật
+OpenID Connect và đăng ký chính xác `GOOGLE_REDIRECT_URI` làm Authorized
+redirect URI. Có thể cấu hình `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` hoặc
+dùng `GOOGLE_CLIENT_SECRETS_FILE` trỏ tới tệp JSON OAuth client loại Web.
+Không dùng Gmail credentials hoặc `token.json` cho luồng đăng nhập. Luồng dùng
+authorization code, scope OpenID/email/profile của Google, state và PKCE;
+cookie state/verifier là `HttpOnly`, `SameSite=Lax` và tự hết hạn sau 10 phút.
+Tài khoản mới chỉ được tạo khi ID token hợp lệ và Google xác nhận email;
+email trùng với tài khoản hiện có sẽ đăng nhập vào tài khoản đó, kích hoạt
+tài khoản chưa active và giữ nguyên tên/vai trò hiện có.
+
+Với port forwarding, `GOOGLE_REDIRECT_URI` phải là địa chỉ mà trình duyệt truy
+cập được và phải khớp chính xác một URI trong tệp client Web lẫn cấu hình
+Google Cloud. Ví dụ nếu cổng backend `8000` được forward thành `localhost:8001`,
+hãy đăng ký và cấu hình
+`http://localhost:8001/auth/google/callback`; backend nội bộ vẫn lắng nghe
+cổng `8000`. Dùng cùng hostname (`localhost` hoặc `127.0.0.1`) xuyên suốt.
+Sau khi đổi `.env` hoặc tệp OAuth, khởi động lại backend.
 
 Gửi email xác thực/đặt lại mật khẩu cần cấu hình OAuth Gmail. Mã xác thực và
 giới hạn gửi hiện ở bộ nhớ tiến trình: mã hết hạn sau 2 phút, gửi lại cùng

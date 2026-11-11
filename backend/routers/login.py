@@ -1,21 +1,226 @@
+import logging
+import json
+import os
 import secrets
 from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import urlencode
 
 from argon2.exceptions import VerificationError
-from fastapi import APIRouter, Cookie, Depends, HTTPException
-from fastapi.responses import JSONResponse
-from sqlalchemy import select
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse, RedirectResponse, Response
+from google.auth.exceptions import GoogleAuthError
+from google.auth.transport.requests import Request as GoogleRequest
+from google.oauth2 import id_token
+from google_auth_oauthlib.flow import Flow
+from oauthlib.oauth2 import OAuth2Error
+from requests import RequestException
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from db.schemas import AccountNameUpdateIn, LoginIn
 from db.session import SESSION_COOKIE_SECURE, SESSION_TTL, get_session
-from db.tables_phase1 import Account, Session as UserSession, ph
+from db.tables_phase1 import Account, AccountRole, Session as UserSession, ph
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
+
+GOOGLE_SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+]
+GOOGLE_STATE_COOKIE = "google_oauth_state"
+GOOGLE_CODE_VERIFIER_COOKIE = "google_oauth_code_verifier"
+GOOGLE_STATE_TTL = 600
+DEFAULT_FRONTEND_BASE_URL = "http://localhost:5500"
+DEFAULT_GOOGLE_REDIRECT_URI = "http://localhost:8000/auth/google/callback"
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 # Hash giả: khi email không tồn tại vẫn tốn thời gian verify như bình thường,
 # nên không ai đo thời gian phản hồi để dò email nào có trong hệ thống
 DUMMY_HASH = ph.hash("dummy-password")
+
+
+def _google_client_config() -> tuple[dict[str, dict[str, object]], str, str]:
+    redirect_uri = os.getenv(
+        "GOOGLE_REDIRECT_URI", DEFAULT_GOOGLE_REDIRECT_URI
+    ).strip()
+    secrets_file = os.getenv("GOOGLE_CLIENT_SECRETS_FILE", "").strip()
+
+    if secrets_file:
+        path = Path(secrets_file)
+        if not path.is_absolute():
+            path = BACKEND_ROOT / path
+        try:
+            credentials = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Không thể đọc tệp cấu hình OAuth Google trên máy chủ.",
+            ) from exc
+
+        web_config = credentials.get("web") if isinstance(credentials, dict) else None
+        if not isinstance(web_config, dict):
+            raise HTTPException(
+                status_code=503,
+                detail="Tệp OAuth Google phải chứa cấu hình client loại Web.",
+            )
+        client_id = web_config.get("client_id")
+        client_secret = web_config.get("client_secret")
+        registered_redirect_uris = web_config.get("redirect_uris", [])
+        if (
+            not isinstance(client_id, str)
+            or not client_id.strip()
+            or not isinstance(client_secret, str)
+            or not client_secret.strip()
+            or not isinstance(registered_redirect_uris, list)
+            or redirect_uri not in registered_redirect_uris
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Tệp OAuth Google phải có client ID/secret và đăng ký "
+                    "đúng GOOGLE_REDIRECT_URI trong redirect_uris."
+                ),
+            )
+        return credentials, client_id.strip(), redirect_uri
+
+    client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+    if not client_id or not client_secret or not redirect_uri:
+        raise HTTPException(
+            status_code=503,
+            detail="Đăng nhập Google chưa được cấu hình trên máy chủ.",
+        )
+
+    return (
+        {
+            "web": {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [redirect_uri],
+            }
+        },
+        client_id,
+        redirect_uri,
+    )
+
+
+def _create_google_flow(
+    *,
+    state: str | None = None,
+    code_verifier: str | None = None,
+) -> Flow:
+    client_config, _, redirect_uri = _google_client_config()
+    flow = Flow.from_client_config(
+        client_config,
+        scopes=GOOGLE_SCOPES,
+        state=state,
+    )
+    flow.redirect_uri = redirect_uri
+    flow.code_verifier = code_verifier
+    return flow
+
+
+def _frontend_url(page: str, **query: str) -> str:
+    base_url = os.getenv("FRONTEND_BASE_URL", DEFAULT_FRONTEND_BASE_URL).rstrip("/")
+    query_string = urlencode(query)
+    return f"{base_url}/modules/{page}" + (f"?{query_string}" if query_string else "")
+
+
+def _google_failure_redirect(reason: str) -> RedirectResponse:
+    response = RedirectResponse(
+        _frontend_url("login.html", google_error=reason),
+        status_code=303,
+    )
+    _clear_google_auth_cookies(response)
+    return response
+
+
+def _clear_google_auth_cookies(response: Response) -> None:
+    for cookie_name in (GOOGLE_STATE_COOKIE, GOOGLE_CODE_VERIFIER_COOKIE):
+        response.delete_cookie(
+            cookie_name,
+            path="/auth/google",
+            secure=SESSION_COOKIE_SECURE,
+            httponly=True,
+            samesite="lax",
+        )
+
+
+def _create_session(account: Account, session: Session) -> str:
+    session_id = secrets.token_urlsafe(32)
+    session.add(
+        UserSession(
+            session_id=session_id,
+            account_id=account.account_id,
+            expires_at=datetime.now(timezone.utc) + SESSION_TTL,
+        )
+    )
+    session.commit()
+    return session_id
+
+
+def _set_session_cookie(response: Response, session_id: str) -> None:
+    response.set_cookie(
+        key="session_id",
+        value=session_id,
+        httponly=True,
+        secure=SESSION_COOKIE_SECURE,
+        samesite="lax",
+        max_age=int(SESSION_TTL.total_seconds()),
+    )
+
+
+def _account_for_google_identity(
+    session: Session,
+    *,
+    email: str,
+    name: str,
+) -> Account:
+    normalized_email = email.strip().lower()
+    account = session.scalar(
+        select(Account).where(func.lower(Account.account_email) == normalized_email)
+    )
+    if account is not None:
+        if not account.is_active:
+            account.is_active = True
+            session.commit()
+        return account
+
+    account_name = name.strip()[:100] or normalized_email.split("@", 1)[0][:100]
+    account = Account(
+        account_name=account_name or "Google User",
+        account_email=normalized_email,
+        is_active=True,
+        role=AccountRole.USER,
+        account_code=f"PENDING{secrets.token_hex(6)}",
+        password_hash="",
+    )
+    account.set_password(secrets.token_urlsafe(48))
+    session.add(account)
+
+    try:
+        session.flush()
+        account.account_code = f"ACC{account.account_id:06d}"
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        account = session.scalar(
+            select(Account).where(
+                func.lower(Account.account_email) == normalized_email
+            )
+        )
+        if account is None:
+            raise
+        if not account.is_active:
+            account.is_active = True
+            session.commit()
+    return account
 
 
 def authenticate(session: Session, email: str, raw_password: str) -> Account | None:
@@ -65,23 +270,7 @@ def login_api(
             detail="Tài khoản chưa được kích hoạt. Vui lòng xác thực email trước khi đăng nhập.",
         )
 
-    # 2. Tạo session ID ngẫu nhiên
-    session_id = secrets.token_urlsafe(32)
-
-    # Keep database expiry and the browser cookie lifetime in sync.
-    expires_at = datetime.now(timezone.utc) + SESSION_TTL
-
-    # 4. Lưu session vào database
-    user_session = UserSession(
-        session_id=session_id,
-        account_id=acc.account_id,
-        expires_at=expires_at,
-    )
-
-    session.add(user_session)
-    session.commit()
-
-    # 5. Trả response + gửi session ID cho browser qua cookie
+    session_id = _create_session(acc, session)
     response = JSONResponse(
         status_code=200,
         content={
@@ -90,16 +279,109 @@ def login_api(
             "account_name": acc.account_name,
         },
     )
+    _set_session_cookie(response, session_id)
+    return response
 
+
+@router.get("/google")
+def google_login_start():
+    flow = _create_google_flow()
+    authorization_url, state = flow.authorization_url(
+        access_type="online",
+        include_granted_scopes="true",
+        prompt="select_account",
+    )
+    response = RedirectResponse(authorization_url, status_code=302)
     response.set_cookie(
-        key="session_id",
-        value=session_id,
+        GOOGLE_STATE_COOKIE,
+        state,
+        max_age=GOOGLE_STATE_TTL,
         httponly=True,
         secure=SESSION_COOKIE_SECURE,
         samesite="lax",
-        max_age=int(SESSION_TTL.total_seconds()),
+        path="/auth/google",
     )
+    if flow.code_verifier:
+        response.set_cookie(
+            GOOGLE_CODE_VERIFIER_COOKIE,
+            flow.code_verifier,
+            max_age=GOOGLE_STATE_TTL,
+            httponly=True,
+            secure=SESSION_COOKIE_SECURE,
+            samesite="lax",
+            path="/auth/google",
+        )
+    return response
 
+
+@router.get("/google/callback")
+def google_login_callback(
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    oauth_state: str | None = Cookie(default=None, alias=GOOGLE_STATE_COOKIE),
+    code_verifier: str | None = Cookie(
+        default=None,
+        alias=GOOGLE_CODE_VERIFIER_COOKIE,
+    ),
+    session: Session = Depends(get_session),
+):
+    if error:
+        return _google_failure_redirect("cancelled")
+    if (
+        not code
+        or not state
+        or not oauth_state
+        or not code_verifier
+        or not secrets.compare_digest(state, oauth_state)
+    ):
+        return _google_failure_redirect("invalid_response")
+
+    flow = _create_google_flow(
+        state=oauth_state,
+        code_verifier=code_verifier,
+    )
+    try:
+        flow.fetch_token(code=code)
+    except (GoogleAuthError, OAuth2Error, RequestException, ValueError, Warning) as exc:
+        logger.warning(
+            "Google OAuth token exchange failed (%s)",
+            type(exc).__name__,
+        )
+        return _google_failure_redirect("token_exchange_failed")
+
+    try:
+        _, client_id, _ = _google_client_config()
+        claims = id_token.verify_oauth2_token(
+            flow.credentials.id_token,
+            GoogleRequest(),
+            audience=client_id,
+        )
+    except (GoogleAuthError, OAuth2Error, RequestException, ValueError) as exc:
+        logger.warning(
+            "Google ID token verification failed (%s)",
+            type(exc).__name__,
+        )
+        return _google_failure_redirect("id_token_invalid")
+
+    email = claims.get("email")
+    if (
+        not isinstance(email, str)
+        or not email.strip()
+        or claims.get("email_verified") is not True
+    ):
+        return _google_failure_redirect("unverified_email")
+
+    name = claims.get("name")
+    account = _account_for_google_identity(
+        session,
+        email=email,
+        name=name if isinstance(name, str) else "",
+    )
+    session_id = _create_session(account, session)
+    response = RedirectResponse(_frontend_url("index.html"), status_code=303)
+    _set_session_cookie(response, session_id)
+    _clear_google_auth_cookies(response)
     return response
 
 

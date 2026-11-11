@@ -1,4 +1,4 @@
-import { apiFetch, readResponse } from "./api.js?v=20261029a";
+import { apiFetch, getApiBaseUrl, readResponse } from "./api.js?v=20261111c";
 
 const form = document.getElementById("login-form");
 const errorMessage = document.getElementById("error-message");
@@ -12,6 +12,20 @@ if (params.has("email")) {
 if (params.get("activated") === "1") {
     errorMessage.textContent = "Email đã được xác thực. Bạn có thể đăng nhập.";
     errorMessage.classList.add("success");
+}
+
+const googleErrorMessages = {
+    cancelled: "Bạn đã hủy đăng nhập bằng Google.",
+    invalid_response: "Yêu cầu đăng nhập Google không hợp lệ hoặc đã hết hạn.",
+    token_exchange_failed: "Google không chấp nhận bước đổi mã đăng nhập. Hãy thử lại; nếu vẫn lỗi, cần kiểm tra cấu hình OAuth.",
+    id_token_invalid: "Không thể xác minh ID token từ Google. Hãy thử lại; nếu vẫn lỗi, cần kiểm tra cấu hình OAuth.",
+    unverified_email: "Google chưa xác minh địa chỉ email của bạn."
+};
+if (params.has("google_error")) {
+    errorMessage.textContent =
+        googleErrorMessages[params.get("google_error")] ||
+        "Đăng nhập bằng Google chưa thành công. Vui lòng thử lại.";
+    errorMessage.classList.add("error");
 }
 
 document.getElementById("register-button").addEventListener("click", () => {
@@ -77,9 +91,21 @@ document.getElementById("login-form").addEventListener("input", () => {
 });
 
 if (googleLoginBtn) {
-    googleLoginBtn.addEventListener("click", () => {
-        console.log("Trigger Google Login flow");
-        alert("Đã kết nối UI: Chờ Backend tích hợp OAuth2 Client ID!");
+    googleLoginBtn.addEventListener("click", async () => {
+        googleLoginBtn.disabled = true;
+        errorMessage.textContent = "";
+        errorMessage.classList.remove("error", "success");
+
+        try {
+            const apiBaseUrl = await getApiBaseUrl();
+            window.location.assign(`${apiBaseUrl}/auth/google`);
+        } catch (error) {
+            console.error("Could not start Google sign-in:", error);
+            errorMessage.textContent =
+                "Không thể kết nối đến server để đăng nhập bằng Google.";
+            errorMessage.classList.add("error");
+            googleLoginBtn.disabled = false;
+        }
     });
 }
 
