@@ -2,6 +2,8 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
+import fakeredis
+import db.redis_session as redis_session
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -9,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import routers.authenticate as auth_router
-from db.tables_phase1 import Account, AccountRole, Base, Session as UserSession
+from db.tables_phase1 import Account, AccountRole, Base
 from db.tables_phase2 import Contest, Language, Problem, Submission
 from src.app import app
 from db.session import get_session
@@ -33,19 +35,35 @@ def override_get_session():
 
 
 
+
 @pytest.fixture(autouse=True)
-def _override_db_session():
+def _override_db_session(monkeypatch):
+    # Tạo Redis giả lập riêng cho từng test
+    fake_redis = fakeredis.FakeRedis(decode_responses=True)
+
+    # Thay Redis thật bằng Redis giả lập
+    monkeypatch.setattr(
+        redis_session,
+        "redis_client",
+        fake_redis,
+    )
+
+    # Giữ nguyên SQLite test database
     previous = app.dependency_overrides.get(get_session)
     app.dependency_overrides[get_session] = override_get_session
+
     Base.metadata.create_all(bind=engine)
+
     try:
         yield
     finally:
         Base.metadata.drop_all(bind=engine)
+
         if previous is None:
             app.dependency_overrides.pop(get_session, None)
         else:
             app.dependency_overrides[get_session] = previous
+
 
 
 def _create_account(email: str, role: AccountRole, *, code: str = None, name: str = None):
@@ -64,16 +82,27 @@ def _create_account(email: str, role: AccountRole, *, code: str = None, name: st
         return account.account_id
 
 
+
 def _set_session(account_id: int, session_id: str = "session-1"):
-    with TestingSessionLocal() as db:
-        db.add(
-            UserSession(
-                session_id=session_id,
-                account_id=account_id,
-                expires_at=datetime.now(timezone.utc) + timedelta(days=1),
-            )
-        )
-        db.commit()
+    session_key = f"session:{session_id}"
+    account_key = f"account_sessions:{account_id}"
+
+    redis_session.redis_client.set(
+        session_key,
+        str(account_id),
+        ex=redis_session.SESSION_TTL_SECONDS,
+    )
+
+    redis_session.redis_client.sadd(
+        account_key,
+        session_id,
+    )
+
+    redis_session.redis_client.expire(
+        account_key,
+        redis_session.SESSION_TTL_SECONDS,
+    )
+
 
 
 def test_super_admin_can_delete_another_account():
@@ -406,3 +435,104 @@ def test_forgot_password_flow(monkeypatch):
     with TestingSessionLocal() as db:
         updated = db.get(Account, user_id)
         assert updated.verify_password("ResetPass!2026") is True
+
+
+def test_delete_account_revokes_all_redis_sessions():
+    # 1. Tạo tài khoản Super Admin
+    super_id = _create_account(
+        "revoke-super@example.com",
+        AccountRole.SUPER_ADMIN,
+        code="REVSUPER",
+    )
+
+    # 2. Tạo tài khoản cần xóa
+    user_id = _create_account(
+        "revoke-user@example.com",
+        AccountRole.USER,
+        code="REVUSER",
+    )
+
+    # 3. Tạo một tài khoản khác không bị xóa
+    other_id = _create_account(
+        "revoke-other@example.com",
+        AccountRole.USER,
+        code="REVOTHER",
+    )
+
+    # 4. Tạo các session Redis
+    _set_session(super_id, "super-session")
+    _set_session(user_id, "user-laptop")
+    _set_session(user_id, "user-phone")
+    _set_session(other_id, "other-session")
+
+    # 5. Kiểm tra các session đều tồn tại
+    assert redis_session.get_session("user-laptop") == user_id
+    assert redis_session.get_session("user-phone") == user_id
+    assert redis_session.get_session("other-session") == other_id
+
+    # 6. Super Admin xóa tài khoản user
+    client = TestClient(app)
+
+    response = client.delete(
+        f"/admin/accounts/{user_id}",
+        cookies={"session_id": "super-session"},
+    )
+
+    assert response.status_code == 200, response.text
+
+    # 7. Tài khoản đã bị xóa khỏi PostgreSQL
+    with TestingSessionLocal() as db:
+        assert db.get(Account, user_id) is None
+
+    # 8. Tất cả session của user đã bị xóa
+    assert redis_session.get_session("user-laptop") is None
+    assert redis_session.get_session("user-phone") is None
+
+    # 9. Set quản lý session cũng bị xóa
+    assert not redis_session.redis_client.exists(
+        f"account_sessions:{user_id}"
+    )
+
+    # 10. Session của tài khoản khác vẫn hoạt động
+    assert redis_session.get_session("other-session") == other_id
+    assert redis_session.get_session("super-session") == super_id
+
+    # 11. Session cũ không thể truy cập /auth/me
+    me_response = client.get(
+        "/auth/me",
+        cookies={"session_id": "user-laptop"},
+    )
+
+    assert me_response.status_code == 401
+
+
+def test_new_session_refreshes_account_sessions_ttl():
+    account_id = 12345
+    redis = redis_session.redis_client
+    account_key = f"account_sessions:{account_id}"
+
+    # Tạo session đầu tiên
+    first_session = redis_session.create_session(account_id)
+
+    assert redis_session.get_session(first_session) == account_id
+
+    # Giả lập thời gian đã trôi qua bằng cách giảm TTL của Redis Set
+    redis.expire(account_key, 60)
+
+    assert redis.ttl(account_key) <= 60
+
+    # Tạo session thứ hai
+    second_session = redis_session.create_session(account_id)
+
+    # TTL của Set phải được gia hạn về 24 giờ
+    remaining_ttl = redis.ttl(account_key)
+
+    assert 0 < remaining_ttl <= redis_session.SESSION_TTL_SECONDS
+    assert remaining_ttl > 60
+
+    # Xóa toàn bộ session
+    redis_session.delete_account_sessions(account_id)
+
+    assert redis_session.get_session(first_session) is None
+    assert redis_session.get_session(second_session) is None
+    assert not redis.exists(account_key)

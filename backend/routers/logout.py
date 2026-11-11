@@ -1,10 +1,8 @@
-from fastapi import APIRouter, Cookie, Depends
+from fastapi import APIRouter, Cookie
 from fastapi.responses import JSONResponse
-from sqlalchemy import delete
-from sqlalchemy.orm import Session
 
-from db.session import SESSION_COOKIE_SECURE, get_session
-from db.tables_phase1 import Session as UserSession
+from db.redis_session import delete_session
+from db.session import SESSION_COOKIE_SECURE
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -12,21 +10,22 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/logout")
 def logout_api(
     session_id: str | None = Cookie(default=None),
-    session: Session = Depends(get_session),
 ):
+    # 1. Xóa session trong Redis
     if session_id is not None:
-        session.execute(
-            delete(UserSession).where(UserSession.session_id == session_id)
-        )
-        session.commit()
+        delete_session(session_id)
 
+    # 2. Trả response
     response = JSONResponse(
         content={"message": "Đăng xuất thành công"},
     )
+
+    # 3. Xóa cookie khỏi trình duyệt
     response.delete_cookie(
         key="session_id",
         httponly=True,
         secure=SESSION_COOKIE_SECURE,
         samesite="lax",
     )
+
     return response

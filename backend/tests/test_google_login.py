@@ -1,21 +1,21 @@
-from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import Mock
 
+import fakeredis
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from unittest.mock import Mock
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import routers.login as login
+import db.redis_session as redis_session
 from db.session import get_session
 from db.tables_phase1 import (
     Account,
     AccountRole,
     Base,
-    Session as UserSession,
 )
 from src.app import app
 
@@ -36,9 +36,14 @@ def override_get_session():
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     previous = app.dependency_overrides.get(get_session)
     app.dependency_overrides[get_session] = override_get_session
+    monkeypatch.setattr(
+        redis_session,
+        "redis_client",
+        fakeredis.FakeRedis(decode_responses=True),
+    )
     Base.metadata.create_all(bind=engine)
     try:
         yield TestClient(app)
@@ -190,16 +195,13 @@ def test_google_login_creates_account_and_session(client, monkeypatch):
 
     with TestingSessionLocal() as db:
         account = db.query(Account).one()
-        user_session = db.query(UserSession).one()
         assert account.account_email == "new.user@example.com"
         assert account.account_name == "New Google User"
         assert account.account_code.startswith("ACC")
         assert account.role is AccountRole.USER
         assert account.is_active is True
-        assert user_session.account_id == account.account_id
-        assert user_session.expires_at.replace(tzinfo=timezone.utc) > datetime.now(
-            timezone.utc
-        )
+    session_id = client.cookies.get("session_id")
+    assert redis_session.get_session(session_id) == account.account_id
 
     me = client.get("/auth/me")
     assert me.status_code == 200
@@ -244,7 +246,8 @@ def test_google_login_links_verified_email_without_changing_existing_role(
         assert account.account_name == "Existing Teacher"
         assert account.role is AccountRole.ADMIN
         assert account.is_active is True
-        assert db.query(UserSession).one().account_id == account_id
+    session_id = client.cookies.get("session_id")
+    assert redis_session.get_session(session_id) == account_id
 
 
 def test_google_login_rejects_unverified_email_without_creating_session(
@@ -270,7 +273,7 @@ def test_google_login_rejects_unverified_email_without_creating_session(
     assert "session_id=" not in callback.headers.get("set-cookie", "")
     with TestingSessionLocal() as db:
         assert db.query(Account).count() == 0
-        assert db.query(UserSession).count() == 0
+    assert redis_session.redis_client.keys("session:*") == []
 
 
 def test_google_login_rejects_mismatched_state(client, monkeypatch):
@@ -292,7 +295,7 @@ def test_google_login_rejects_mismatched_state(client, monkeypatch):
     assert "google_error=invalid_response" in callback.headers["location"]
     with TestingSessionLocal() as db:
         assert db.query(Account).count() == 0
-        assert db.query(UserSession).count() == 0
+    assert redis_session.redis_client.keys("session:*") == []
 
 
 def test_google_login_reports_id_token_verification_failure(client, monkeypatch):

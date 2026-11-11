@@ -13,6 +13,7 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Query
 from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from db.redis_session import get_session as get_redis_session
 from db.schemas import (
     AcademicClassContestIn,
     ClassContestCreateIn,
@@ -35,7 +36,6 @@ from db.tables_phase1 import (
     AcademicClass,
     ClassJoinRequest,
     ManageClass,
-    Session as UserSession,
     Student,
     StudentClass,
 )
@@ -146,24 +146,38 @@ def _require_admin_account(session_id: str | None, session: Session) -> Account:
 
 
 def _require_authenticated_account(session_id: str | None, session: Session) -> Account:
+    # 1. Kiểm tra cookie
     if session_id is None:
-        raise HTTPException(status_code=401, detail="Chưa đăng nhập")
+        raise HTTPException(
+            status_code=401,
+            detail="Chưa đăng nhập",
+        )
 
-    user_session = session.get(UserSession, session_id)
-    if user_session is None:
-        raise HTTPException(status_code=401, detail="Session không hợp lệ")
+    # 2. Kiểm tra session trong Redis
+    account_id = get_redis_session(session_id)
 
-    expires_at = user_session.expires_at
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at <= datetime.now(timezone.utc):
-        raise HTTPException(status_code=401, detail="Session đã hết hạn")
+    if account_id is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Session không hợp lệ hoặc đã hết hạn",
+        )
 
-    account = session.get(Account, user_session.account_id)
+    # 3. Lấy account từ PostgreSQL
+    account = session.get(Account, account_id)
+
     if account is None:
-        raise HTTPException(status_code=401, detail="Tài khoản không tồn tại")
+        raise HTTPException(
+            status_code=401,
+            detail="Tài khoản không tồn tại",
+        )
+
+    # 4. Kiểm tra trạng thái tài khoản
     if not account.is_active:
-        raise HTTPException(status_code=403, detail="Tài khoản chưa được kích hoạt")
+        raise HTTPException(
+            status_code=403,
+            detail="Tài khoản chưa được kích hoạt",
+        )
+
     return account
 
 

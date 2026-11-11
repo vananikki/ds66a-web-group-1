@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 import base64
 
+import fakeredis
+import db.redis_session as redis_session
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -18,7 +20,6 @@ from db.tables_phase1 import (
     ManageClass,
     Student,
     StudentClass,
-    Session as UserSession,
 )
 from db.tables_phase2 import (
     AccessModifier,
@@ -53,14 +54,31 @@ def override_get_session():
 
 
 @pytest.fixture(autouse=True)
-def _override_db_session():
+def _override_db_session(monkeypatch):
+    # 1. Tạo Redis giả lập
+    fake_redis = fakeredis.FakeRedis(decode_responses=True)
+
+    # 2. Thay Redis thật bằng Redis giả lập
+    monkeypatch.setattr(
+        redis_session,
+        "redis_client",
+        fake_redis,
+    )
+
+    # 3. Override PostgreSQL bằng SQLite
     previous = app.dependency_overrides.get(get_session)
     app.dependency_overrides[get_session] = override_get_session
+
+    # 4. Tạo các bảng cho mỗi test
     Base.metadata.create_all(bind=engine)
+
     try:
         yield
     finally:
+        # 5. Xóa các bảng sau mỗi test
         Base.metadata.drop_all(bind=engine)
+
+        # 6. Khôi phục dependency override
         if previous is None:
             app.dependency_overrides.pop(get_session, None)
         else:
@@ -84,15 +102,31 @@ def _create_account(email: str, role: AccountRole, *, code: str = None, name: st
 
 
 def _set_session(account_id: int, session_id: str = "session-1"):
-    with TestingSessionLocal() as db:
-        db.add(
-            UserSession(
-                session_id=session_id,
-                account_id=account_id,
-                expires_at=datetime.now(timezone.utc) + timedelta(days=1),
-            )
-        )
-        db.commit()
+    # Key chứa account_id tương ứng với session
+    session_key = f"session:{session_id}"
+
+    # Key chứa danh sách session của account
+    account_key = f"account_sessions:{account_id}"
+
+    # Lưu session vào Redis
+    redis_session.redis_client.set(
+        session_key,
+        str(account_id),
+        ex=redis_session.SESSION_TTL_SECONDS,
+    )
+
+    # Thêm session_id vào danh sách session của account
+    redis_session.redis_client.sadd(
+        account_key,
+        session_id,
+    )
+
+    # Thiết lập thời gian hết hạn
+    redis_session.redis_client.expire(
+        account_key,
+        redis_session.SESSION_TTL_SECONDS,
+    )
+
 
 
 def test_admin_can_create_problem_and_class():

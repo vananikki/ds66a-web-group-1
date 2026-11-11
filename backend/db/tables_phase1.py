@@ -133,12 +133,6 @@ class Account(Base):
         uselist=False,
     )
 
-    # Account 1 - N Session
-    sessions: Mapped[list["Session"]] = relationship(
-        back_populates="account",
-        cascade="all, delete-orphan",
-    )
-
     # Relationship assignments are attached below after the phase-two models
     # are imported so SQLAlchemy can resolve the foreign-key targets safely.
 
@@ -251,40 +245,6 @@ class Admin(Base):
     manage_classes: Mapped[list["ManageClass"]] = relationship(
         back_populates="admin",
         cascade="all, delete-orphan",
-    )
-
-
-# =========================================================
-# Session
-# =========================================================
-
-class Session(Base):
-    __tablename__ = "session"
-
-    session_id: Mapped[str] = mapped_column(
-        String(64),
-        primary_key=True,
-    )
-
-    account_id: Mapped[int] = mapped_column(
-        ForeignKey("account.account_id"),
-        nullable=False,
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-
-    expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-    )
-
-    # Session N - 1 Account
-    account: Mapped["Account"] = relationship(
-        back_populates="sessions",
     )
 
 

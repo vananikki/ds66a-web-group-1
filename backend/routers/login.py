@@ -2,7 +2,6 @@ import logging
 import json
 import os
 import secrets
-from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -19,9 +18,14 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from db.redis_session import (
+    SESSION_TTL_SECONDS,
+    create_session as create_redis_session,
+    get_session as get_redis_session,
+)
 from db.schemas import AccountNameUpdateIn, LoginIn
-from db.session import SESSION_COOKIE_SECURE, SESSION_TTL, get_session
-from db.tables_phase1 import Account, AccountRole, Session as UserSession, ph
+from db.session import SESSION_COOKIE_SECURE, get_session
+from db.tables_phase1 import Account, AccountRole, ph
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -152,17 +156,8 @@ def _clear_google_auth_cookies(response: Response) -> None:
         )
 
 
-def _create_session(account: Account, session: Session) -> str:
-    session_id = secrets.token_urlsafe(32)
-    session.add(
-        UserSession(
-            session_id=session_id,
-            account_id=account.account_id,
-            expires_at=datetime.now(timezone.utc) + SESSION_TTL,
-        )
-    )
-    session.commit()
-    return session_id
+def _create_session(account: Account) -> str:
+    return create_redis_session(account.account_id)
 
 
 def _set_session_cookie(response: Response, session_id: str) -> None:
@@ -172,7 +167,7 @@ def _set_session_cookie(response: Response, session_id: str) -> None:
         httponly=True,
         secure=SESSION_COOKIE_SECURE,
         samesite="lax",
-        max_age=int(SESSION_TTL.total_seconds()),
+        max_age=SESSION_TTL_SECONDS,
     )
 
 
@@ -270,7 +265,7 @@ def login_api(
             detail="Tài khoản chưa được kích hoạt. Vui lòng xác thực email trước khi đăng nhập.",
         )
 
-    session_id = _create_session(acc, session)
+    session_id = _create_session(acc)
     response = JSONResponse(
         status_code=200,
         content={
@@ -378,7 +373,7 @@ def google_login_callback(
         email=email,
         name=name if isinstance(name, str) else "",
     )
-    session_id = _create_session(account, session)
+    session_id = _create_session(account)
     response = RedirectResponse(_frontend_url("index.html"), status_code=303)
     _set_session_cookie(response, session_id)
     _clear_google_auth_cookies(response)
@@ -396,27 +391,17 @@ def get_current_account(
             detail="Chưa đăng nhập",
         )
 
-    user_session = session.scalar(
-        select(UserSession)
-        .where(UserSession.session_id == session_id)
-    )
+    # 1. Kiểm tra session trong Redis
+    account_id = get_redis_session(session_id)
 
-    if user_session is None:
+    if account_id is None:
         raise HTTPException(
             status_code=401,
-            detail="Session không hợp lệ",
+            detail="Session không hợp lệ hoặc đã hết hạn",
         )
 
-    expires_at = user_session.expires_at
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at <= datetime.now(timezone.utc):
-        raise HTTPException(
-            status_code=401,
-            detail="Session đã hết hạn",
-        )
-
-    account = session.get(Account, user_session.account_id)
+    # 2. Lấy thông tin tài khoản từ PostgreSQL
+    account = session.get(Account, account_id)
 
     if account is None:
         raise HTTPException(
@@ -447,29 +432,39 @@ def update_current_account(
     session: Session = Depends(get_session),
 ):
     if session_id is None:
-        raise HTTPException(status_code=401, detail="Chưa đăng nhập")
+        raise HTTPException(
+            status_code=401,
+            detail="Chưa đăng nhập",
+        )
 
-    user_session = session.get(UserSession, session_id)
-    if user_session is None:
-        raise HTTPException(status_code=401, detail="Session không hợp lệ")
+    # 1. Kiểm tra session trong Redis
+    account_id = get_redis_session(session_id)
 
-    expires_at = user_session.expires_at
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at <= datetime.now(timezone.utc):
-        raise HTTPException(status_code=401, detail="Session đã hết hạn")
+    if account_id is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Session không hợp lệ hoặc đã hết hạn",
+        )
 
-    account = session.get(Account, user_session.account_id)
+    # 2. Lấy thông tin tài khoản từ PostgreSQL
+    account = session.get(Account, account_id)
+
     if account is None:
-        raise HTTPException(status_code=401, detail="Tài khoản không tồn tại")
+        raise HTTPException(
+            status_code=401,
+            detail="Tài khoản không tồn tại",
+        )
 
+    # 3. Kiểm tra tên tài khoản mới
     account_name = data.account_name.strip()
+
     if len(account_name) < 3:
         raise HTTPException(
             status_code=422,
             detail="Tên tài khoản phải có ít nhất 3 ký tự",
         )
 
+    # 4. Cập nhật tên trong PostgreSQL
     account.account_name = account_name
     session.commit()
     session.refresh(account)

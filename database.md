@@ -17,7 +17,6 @@ Backend kết nối cơ sở dữ liệu qua `DATABASE_URL` trong `backend/.env`
 erDiagram
     ACCOUNT ||--o| STUDENT : "student profile"
     ACCOUNT ||--o| ADMIN : "admin profile"
-    ACCOUNT ||--o{ SESSION : "has sessions"
     ACCOUNT o|--o{ PROBLEM : "creates"
     ACCOUNT o|--o{ CONTEST : "creates"
     ACCOUNT o|--o{ SUBMISSION : "submits"
@@ -60,12 +59,6 @@ erDiagram
         int admin_id PK
         int account_id FK
         boolean is_active
-    }
-    SESSION {
-        string session_id PK
-        int account_id FK
-        datetime created_at
-        datetime expires_at
     }
     ACADEMIC_CLASS {
         int class_id PK
@@ -174,10 +167,10 @@ unless stated otherwise. `created_at`, `requested_at`, `added_at`, and
 | `account` | `account_id` integer PK; `account_email` varchar(100) required, unique; `is_active` boolean required, default `true`; `account_code` varchar(20) required, unique; `account_name` varchar(100) required; `password_hash` varchar(255) required; `created_at` timezone-aware timestamp required, default current time; `role` enum `account_role` required (`USER`, `ADMIN`, `SUPER_ADMIN`), application default `USER`. |
 | `student` | `student_id` integer PK; `account_id` integer required FK → `account.account_id`, unique. An account can have at most one student profile. |
 | `admin` | `admin_id` integer PK; `account_id` integer required FK → `account.account_id`, unique; `is_active` boolean required, default `true`. An account can have at most one admin profile. |
-| `session` | `session_id` varchar(64) PK; `account_id` integer required FK → `account.account_id`; `created_at` timezone-aware timestamp required, default current time; `expires_at` timezone-aware timestamp required. |
 
 Roles live on `account`; the `student` and `admin` tables are separate role
-profiles. Authentication sessions belong to one account.
+profiles. Authentication sessions are stored in Redis, not in PostgreSQL; see
+the Redis configuration in [backend.md](./backend.md).
 
 ### Classes and membership
 
@@ -234,7 +227,6 @@ copying its statement or test cases.
 ## Relationship summary
 
 - `account` 1 — 0..1 `student`; `account` 1 — 0..1 `admin`.
-- `account` 1 — many `session`.
 - `account` 1 — many owned `problem` and `contest`; these ownership links are
   optional (`created_by` can be `NULL`).
 - `account` 1 — many `submission`; the submitter link is optional so a
@@ -253,6 +245,10 @@ copying its statement or test cases.
   `contest_id` to `NULL` at the database level.
 
 ## Deletion and migration notes
+
+- Authentication sessions are stored in Redis with a 24-hour TTL. The legacy
+  SQL `session` table, if present from an earlier deployment, is no longer
+  queried; existing SQL sessions are not migrated and users must sign in again.
 
 - Database `ON DELETE` actions are explicitly configured only on the foreign
   keys listed above. Other cleanup behavior is performed by ORM cascades or

@@ -14,14 +14,18 @@ liệu lưu trữ nằm trong [database.md](./database.md).
 - `backend/db/tables_phase1.py`, `tables_phase2.py`: SQLAlchemy models đang
   hoạt động.
 - `backend/db/session.py`: engine và dependency cấp database session cho API.
+- `backend/db/redis_client.py`, `redis_session.py`: kết nối Redis và quản lý
+  session đăng nhập.
 - `backend/db/initialize_tables.py`: tạo các bảng còn thiếu.
 - `backend/db/migrate_judge_admin.py`: migration lặp lại an toàn cho schema
   judge; hiện cũng xóa vĩnh viễn bảng `solution` đã ngừng sử dụng.
 - `backend/tests/`: kiểm thử API, quyền truy cập, phiên và migration.
 
-Backend dùng FastAPI, SQLAlchemy, PostgreSQL và session cookie. Mã nguồn bài
-nộp được gửi tới Judge0; FastAPI không thực thi mã nguồn trực tiếp. Danh sách
-ngôn ngữ được đồng bộ từ Judge0 vào bảng `language`.
+Backend dùng FastAPI, SQLAlchemy, PostgreSQL, Redis và session cookie. Account
+và dữ liệu nghiệp vụ vẫn ở PostgreSQL; session đăng nhập được lưu trong Redis
+với thời hạn 24 giờ. Mã nguồn bài nộp được gửi tới Judge0; FastAPI không thực
+thi mã nguồn trực tiếp. Danh sách ngôn ngữ được đồng bộ từ Judge0 vào bảng
+`language`.
 
 ## API
 
@@ -195,6 +199,7 @@ hoặc quyền quản lý contest theo phạm vi. Schema và chính sách lưu s
 | Biến | Ý nghĩa |
 |---|---|
 | `DATABASE_URL` | URL PostgreSQL, ví dụ định dạng `postgresql+psycopg://...` |
+| `REDIS_URL` | URL Redis, ví dụ `redis://127.0.0.1:6379/0`; bắt buộc |
 | `JUDGE0_URL` | URL Judge0; mặc định `http://localhost:2358` |
 | `SESSION_COOKIE_SECURE` | Đặt `true` khi dùng HTTPS; mặc định `false` |
 | `CORS_ORIGINS` | Danh sách origin frontend, phân tách bằng dấu phẩy |
@@ -224,6 +229,33 @@ hãy đăng ký và cấu hình
 `http://localhost:8001/auth/google/callback`; backend nội bộ vẫn lắng nghe
 cổng `8000`. Dùng cùng hostname (`localhost` hoặc `127.0.0.1`) xuyên suốt.
 Sau khi đổi `.env` hoặc tệp OAuth, khởi động lại backend.
+
+### Redis session
+
+Redis là dependency bắt buộc để backend khởi động. Trên máy Debian 12 chạy
+Redis cục bộ, cài và bật dịch vụ bằng:
+
+```bash
+sudo apt update
+sudo apt install redis-server
+sudo systemctl enable --now redis-server
+sudo systemctl status redis-server
+redis-cli ping
+```
+
+`redis-cli ping` cần trả về `PONG`. Chỉ bind Redis vào loopback nếu Redis và
+backend cùng máy; không mở cổng `6379` ra Internet. Đặt
+`REDIS_URL=redis://127.0.0.1:6379/0` trong `backend/.env`, giữ tệp riêng tư,
+rồi khởi động lại backend. Nếu Redis nằm ở máy khác, dùng địa chỉ riêng được
+bảo vệ bằng firewall và cấu hình xác thực/TLS theo hạ tầng đó.
+
+Khi đăng nhập thường hoặc Google OAuth thành công, Redis lưu
+`session:<session_id> → account_id` với TTL 24 giờ. Redis cũng lưu tập
+`account_sessions:<account_id>` để thu hồi mọi session khi tài khoản bị xóa.
+Đăng xuất thu hồi session hiện tại. Account và hồ sơ vẫn đọc từ PostgreSQL;
+session SQL cũ không còn được dùng, vì vậy session hiện có sẽ yêu cầu đăng
+nhập lại sau khi triển khai. Backend không tự chuyển tiếp các session cũ từ
+PostgreSQL sang Redis.
 
 Gửi email xác thực/đặt lại mật khẩu cần cấu hình OAuth Gmail. Mã xác thực và
 giới hạn gửi hiện ở bộ nhớ tiến trình: mã hết hạn sau 5 phút, gửi lại cùng
@@ -277,9 +309,11 @@ có cấu hình bảo vệ phù hợp. Hướng dẫn UI và luồng thao tác �
 Từ thư mục `backend`:
 
 ```bash
-.venv/bin/pytest
+.venv/bin/python -m pip install -r requirements-dev.txt
+PYTHONPATH=. .venv/bin/python -m pytest
 ```
 
-Các kiểm thử chính bao gồm API quản trị/lớp học, đăng nhập/session, xóa tài
-khoản và migration schema; luồng chạy thử kiểm tra input tự nhập, quyền truy
-cập bài/lớp và bảo đảm không tạo submission.
+Các kiểm thử chính bao gồm API quản trị/lớp học, đăng nhập/session Redis, xóa
+tài khoản và migration schema; luồng chạy thử kiểm tra input tự nhập, quyền
+truy cập bài/lớp và bảo đảm không tạo submission. Test session dùng
+`fakeredis`; không cần Redis service thật để chạy test.

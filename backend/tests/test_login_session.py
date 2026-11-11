@@ -1,18 +1,17 @@
-from datetime import datetime, timedelta, timezone
-
 import pytest
+import fakeredis
+import db.redis_session as redis_session
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from db.redis_session import SESSION_TTL_SECONDS
 
 from db.session import (
     SESSION_COOKIE_SECURE,
-    SESSION_TTL,
-    cleanup_expired_sessions,
     get_session,
 )
-from db.tables_phase1 import Account, AccountRole, Base, Session as UserSession
+from db.tables_phase1 import Account, AccountRole, Base
 from src.app import app
 
 engine = create_engine(
@@ -32,14 +31,29 @@ def override_get_session():
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    # 1. Tạo Redis giả lập cho từng bài test
+    fake_redis = fakeredis.FakeRedis(decode_responses=True)
+
+    # 2. Thay Redis thật bằng Redis giả lập
+    monkeypatch.setattr(
+        redis_session,
+        "redis_client",
+        fake_redis,
+    )
+
+    # 3. Giữ nguyên phần SQLite test database
     previous = app.dependency_overrides.get(get_session)
     app.dependency_overrides[get_session] = override_get_session
+
     Base.metadata.create_all(bind=engine)
+
     try:
-        yield TestClient(app)
+        with TestClient(app) as test_client:
+            yield test_client
     finally:
         Base.metadata.drop_all(bind=engine)
+
         if previous is None:
             app.dependency_overrides.pop(get_session, None)
         else:
@@ -62,9 +76,11 @@ def create_account(*, is_active=True):
         return account.account_id
 
 
+
 def test_login_sets_http_only_cookie_with_matching_session_expiry(client):
     account_id = create_account()
 
+    # 1. Đăng nhập
     response = client.post(
         "/auth/login",
         json={
@@ -74,27 +90,49 @@ def test_login_sets_http_only_cookie_with_matching_session_expiry(client):
     )
 
     assert response.status_code == 200, response.text
+
+    # 2. Kiểm tra cookie
     cookie = response.headers["set-cookie"].lower()
+
     assert "session_id=" in cookie
     assert "httponly" in cookie
     assert "samesite=lax" in cookie
-    assert f"max-age={int(SESSION_TTL.total_seconds())}" in cookie
+    assert f"max-age={SESSION_TTL_SECONDS}" in cookie
     assert ("secure" in cookie) is SESSION_COOKIE_SECURE
 
-    with TestingSessionLocal() as db:
-        user_session = db.query(UserSession).one()
-        assert user_session.account_id == account_id
-        assert datetime.now(timezone.utc) < user_session.expires_at.replace(
-            tzinfo=timezone.utc
-        ) <= datetime.now(timezone.utc) + SESSION_TTL + timedelta(seconds=1)
+    # 3. Lấy session_id từ cookie
+    session_id = client.cookies.get("session_id")
 
+    assert session_id is not None
+
+    # 4. Kiểm tra session trong Redis
+    stored_account_id = redis_session.get_session(session_id)
+
+    assert stored_account_id == account_id
+
+    # 5. Kiểm tra TTL
+    session_key = f"session:{session_id}"
+
+    ttl = redis_session.redis_client.ttl(session_key)
+
+    assert 0 < ttl <= SESSION_TTL_SECONDS
+
+    # 6. Kiểm tra endpoint /auth/me
     me_response = client.get("/auth/me")
+
     assert me_response.status_code == 200, me_response.text
     assert me_response.json()["account_id"] == account_id
 
+    # 7. Đăng xuất
     logout_response = client.post("/auth/logout")
+
     assert logout_response.status_code == 200
     assert "max-age=0" in logout_response.headers["set-cookie"].lower()
+
+    # 8. Session phải bị xóa khỏi Redis
+    assert redis_session.get_session(session_id) is None
+
+    # 9. Không thể truy cập /auth/me sau logout
     assert client.get("/auth/me").status_code == 401
 
 
@@ -114,29 +152,30 @@ def test_login_rejects_invalid_password_without_setting_session_cookie(client):
     assert client.get("/auth/me").status_code == 401
 
 
-def test_cleanup_expired_sessions_removes_stale_rows(client):
+def test_redis_session_expires_automatically(client):
     account_id = create_account()
 
-    with TestingSessionLocal() as db:
-        expired = UserSession(
-            session_id="expired-session",
-            account_id=account_id,
-            expires_at=datetime.now(timezone.utc) - timedelta(minutes=5),
-        )
-        valid = UserSession(
-            session_id="valid-session",
-            account_id=account_id,
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
-        )
-        db.add_all([expired, valid])
-        db.commit()
+    # 1. Tạo session trong Redis giả lập
+    session_id = redis_session.create_session(account_id)
 
-    deleted_count = cleanup_expired_sessions(engine)
-    assert deleted_count == 1
+    # 2. Kiểm tra session tồn tại
+    assert redis_session.get_session(session_id) == account_id
 
-    with TestingSessionLocal() as db:
-        remaining = {row.session_id for row in db.query(UserSession).all()}
-        assert remaining == {"valid-session"}
+    # 3. Giả lập session hết hạn
+    session_key = f"session:{session_id}"
+
+    redis_session.redis_client.delete(session_key)
+
+    # 4. Kiểm tra session không còn hợp lệ
+    assert redis_session.get_session(session_id) is None
+
+    # 5. Thử truy cập /auth/me bằng session đã bị xóa
+    client.cookies.set("session_id", session_id)
+
+    response = client.get("/auth/me")
+
+    assert response.status_code == 401
+
 
 
 def test_unverified_email_requires_correct_password_and_never_creates_session(client):
@@ -164,5 +203,4 @@ def test_unverified_email_requires_correct_password_and_never_creates_session(cl
     assert "chưa được kích hoạt" in correct_password_response.json()["detail"]
     assert "set-cookie" not in correct_password_response.headers
 
-    with TestingSessionLocal() as db:
-        assert db.query(UserSession).count() == 0
+    assert redis_session.redis_client.keys("session:*") == []

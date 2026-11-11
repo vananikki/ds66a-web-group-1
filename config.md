@@ -9,6 +9,8 @@ OAuth credentials**. Không gửi hoặc commit các tệp bí mật lên Git.
 - Git.
 - Python 3.11.
 - PostgreSQL đang chạy và có quyền tạo database/user.
+- Redis đang chạy để lưu session đăng nhập; mặc định dùng Redis cục bộ trên
+  `127.0.0.1:6379`.
 - Một dịch vụ Judge0 có thể truy cập từ máy chạy backend nếu cần chấm bài.
 - Tài khoản Google OAuth/Gmail nếu cần gửi email xác thực và đặt lại mật khẩu.
 
@@ -24,6 +26,19 @@ python3.11 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements.txt
 ```
+
+Redis trên Debian 12:
+
+```bash
+sudo apt update
+sudo apt install redis-server
+sudo systemctl enable --now redis-server
+redis-cli ping
+```
+
+Lệnh cuối cần trả về `PONG`. Chỉ cho phép kết nối Redis từ loopback khi Redis
+chạy cùng máy với backend; không mở cổng `6379` ra Internet. Nếu Redis chạy ở
+máy riêng, chỉ dùng địa chỉ mạng riêng với firewall, xác thực và TLS phù hợp.
 
 Trên Windows PowerShell, có thể tạo virtual environment bằng
 `py -3.11 -m venv .venv`, sau đó dùng `.venv\Scripts\python.exe` thay cho
@@ -52,6 +67,7 @@ theo vị trí của project. Chỉ tự nhập các giá trị phù hợp với
 | Tên cấu hình | Bắt buộc | Mục đích |
 |---|---:|---|
 | `DATABASE_URL` | Có | Kết nối PostgreSQL của bước 3 |
+| `REDIS_URL` | Có | URL Redis; cục bộ: `redis://127.0.0.1:6379/0` |
 | `JUDGE0_URL` | Khi cần chấm bài | URL gốc của API Judge0 mà backend truy cập được; mặc định là `http://localhost:2358` |
 | `CORS_ORIGINS` | Tùy chọn | Các origin frontend bổ sung, phân cách bằng dấu phẩy; chỉ nhập origin, không thêm path |
 | `SESSION_COOKIE_SECURE` | Tùy chọn | Bật `true` khi frontend/backend dùng HTTPS; để `false` khi phát triển qua HTTP |
@@ -89,6 +105,10 @@ không trộn `localhost` với `127.0.0.1`. Sau khi sửa cấu hình OAuth ph�
 động lại backend và bắt đầu một lượt đăng nhập mới.
 
 ## 5. Tạo schema
+
+Session đăng nhập được lưu trong Redis, không cần tạo bảng SQL cho session.
+Khi chuyển từ phiên bản dùng session PostgreSQL, người dùng cần đăng nhập lại;
+backend không chuyển session cũ sang Redis.
 
 Từ thư mục `backend`, chạy:
 
