@@ -247,8 +247,12 @@ copying its statement or test cases.
 ## Deletion and migration notes
 
 - Authentication sessions are stored in Redis with a 24-hour TTL. The legacy
-  SQL `session` table, if present from an earlier deployment, is no longer
-  queried; existing SQL sessions are not migrated and users must sign in again.
+  SQL `session` table is removed by `migrate_judge_admin.py`; its rows are
+  permanently deleted. Existing SQL sessions are not migrated and users must
+  sign in again. A Redis session represents one browser login, not a unique
+  account; logout removes that session and its browser cookie. See
+  [backend.md](./backend.md) for a safe command to count unexpired Redis
+  sessions without displaying their tokens.
 
 - Database `ON DELETE` actions are explicitly configured only on the foreign
   keys listed above. Other cleanup behavior is performed by ORM cascades or
@@ -261,12 +265,15 @@ copying its statement or test cases.
   older plain-text rows and preserves their encoding state.
 - The repeatable judge migration drops the deprecated `solution` table. This is
   destructive; any existing rows in that table are permanently removed.
+- The repeatable judge migration also drops the legacy SQL `session` table.
+  Its rows are obsolete after moving authentication to Redis and are
+  permanently deleted.
 - Administrative deletion routes explicitly remove dependent test cases,
   submissions, and class/contest links as appropriate.
 - Run `PYTHONPATH=. .venv/bin/python db/initialize_tables.py` for missing
   tables, then `PYTHONPATH=. .venv/bin/python db/migrate_judge_admin.py` to
   apply incremental judge schema changes and remove the deprecated `solution`
-  table. The migration is intended to be repeatable.
+  and legacy `session` tables. The migration is intended to be repeatable.
 - `backend/db/initialize/creating.py` contains older duplicate `Problem` and
   `Contest` declarations. The active application metadata is assembled from
   `tables_phase1.py` and `tables_phase2.py`; use those files when changing the

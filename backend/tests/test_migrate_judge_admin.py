@@ -139,3 +139,29 @@ def test_migration_drops_legacy_solution_table():
     migrate_judge_schema(engine)
 
     assert not inspect(engine).has_table("solution")
+
+
+def test_migration_drops_legacy_authentication_session_table():
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                'CREATE TABLE "session" ('
+                "session_id VARCHAR(64) PRIMARY KEY, "
+                "account_id INTEGER NOT NULL, "
+                "created_at DATETIME NOT NULL, "
+                "expires_at DATETIME NOT NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                'INSERT INTO "session" '
+                "(session_id, account_id, created_at, expires_at) "
+                "VALUES ('legacy-session', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+        )
+
+    migrate_judge_schema(engine)
+    migrate_judge_schema(engine)
+
+    assert not inspect(engine).has_table("session")

@@ -12,6 +12,7 @@ def migrate_judge_schema(database_engine: Engine) -> None:
 
     with database_engine.begin() as connection:
         connection.execute(text("DROP TABLE IF EXISTS solution"))
+        connection.execute(text('DROP TABLE IF EXISTS "session"'))
 
         problem_columns = {
             column["name"]

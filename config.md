@@ -118,9 +118,9 @@ PYTHONPATH=. .venv/bin/python db/migrate_judge_admin.py
 ```
 
 Lệnh đầu tạo các bảng còn thiếu theo model hiện tại. Lệnh migration tiếp theo
-bổ sung schema judge cần thiết và xóa bảng cũ `solution` nếu còn tồn tại.
-Migration này có thể xóa dữ liệu còn sót trong bảng đó; xem chi tiết tại
-[database.md](./database.md) và [backend.md](./backend.md).
+bổ sung schema judge cần thiết và xóa các bảng cũ `solution` và `session` nếu
+còn tồn tại. Migration này xóa dữ liệu còn sót trong các bảng đó; xem chi tiết
+tại [database.md](./database.md) và [backend.md](./backend.md).
 
 Trong Windows PowerShell, đứng trong `backend` và đặt `PYTHONPATH` như sau
 trước mỗi lệnh Python:

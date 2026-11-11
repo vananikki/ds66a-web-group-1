@@ -18,7 +18,7 @@ liệu lưu trữ nằm trong [database.md](./database.md).
   session đăng nhập.
 - `backend/db/initialize_tables.py`: tạo các bảng còn thiếu.
 - `backend/db/migrate_judge_admin.py`: migration lặp lại an toàn cho schema
-  judge; hiện cũng xóa vĩnh viễn bảng `solution` đã ngừng sử dụng.
+  judge; cũng xóa vĩnh viễn bảng legacy `solution` và `session`.
 - `backend/tests/`: kiểm thử API, quyền truy cập, phiên và migration.
 
 Backend dùng FastAPI, SQLAlchemy, PostgreSQL, Redis và session cookie. Account
@@ -252,10 +252,30 @@ bảo vệ bằng firewall và cấu hình xác thực/TLS theo hạ tầng đó
 Khi đăng nhập thường hoặc Google OAuth thành công, Redis lưu
 `session:<session_id> → account_id` với TTL 24 giờ. Redis cũng lưu tập
 `account_sessions:<account_id>` để thu hồi mọi session khi tài khoản bị xóa.
-Đăng xuất thu hồi session hiện tại. Account và hồ sơ vẫn đọc từ PostgreSQL;
-session SQL cũ không còn được dùng, vì vậy session hiện có sẽ yêu cầu đăng
-nhập lại sau khi triển khai. Backend không tự chuyển tiếp các session cũ từ
-PostgreSQL sang Redis.
+Mỗi lần đăng nhập trên một trình duyệt tạo một session riêng; số session
+không nhất thiết bằng số tài khoản/người dùng. Đăng xuất xóa session tương
+ứng trong Redis và cookie `session_id` của trình duyệt hiện tại. Account và
+hồ sơ vẫn đọc từ PostgreSQL; session SQL cũ không còn được dùng.
+
+Đếm số session Redis còn TTL mà không in token/session ID:
+
+```bash
+cd backend
+.venv/bin/python - <<'PY'
+from db.redis_client import redis_client
+
+active = sum(
+    1
+    for key in redis_client.scan_iter(match="session:*", count=1000)
+    if redis_client.ttl(key) > 0
+)
+print(f"Active sessions: {active}")
+PY
+```
+
+Migration `migrate_judge_admin.py` xóa bảng SQL `session` cũ cùng dữ liệu
+trong đó; thao tác này không thể hoàn tác. Session PostgreSQL không được
+chuyển sang Redis nên người dùng cần đăng nhập lại sau khi nâng cấp.
 
 Gửi email xác thực/đặt lại mật khẩu cần cấu hình OAuth Gmail. Mã xác thực và
 giới hạn gửi hiện ở bộ nhớ tiến trình: mã hết hạn sau 5 phút, gửi lại cùng
@@ -278,9 +298,9 @@ PYTHONPATH=. .venv/bin/python -m src.serve
 ```
 
 `initialize_tables.py` tạo bảng còn thiếu nhưng không tự thêm cột vào bảng đã
-tồn tại; migration xử lý các cột cần bổ sung. Migration xóa bảng cũ `solution`
-và mọi dữ liệu trong đó. Chạy trước khi khởi động backend sau khi nâng cấp
-source code.
+tồn tại; migration xử lý các cột cần bổ sung. Migration xóa các bảng legacy
+`solution` và `session` cùng mọi dữ liệu trong đó. Chạy trước khi khởi động
+backend sau khi nâng cấp source code.
 
 Frontend tĩnh:
 
