@@ -1,15 +1,17 @@
-import secrets
-from datetime import datetime, timezone
-
 from argon2.exceptions import VerificationError
 from fastapi import APIRouter, Cookie, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from db.redis_session import (
+    SESSION_TTL_SECONDS,
+    create_session,
+    get_session as get_redis_session,
+)
 from db.schemas import AccountNameUpdateIn, LoginIn
-from db.session import SESSION_COOKIE_SECURE, SESSION_TTL, get_session
-from db.tables_phase1 import Account, Session as UserSession, ph
+from db.session import SESSION_COOKIE_SECURE, get_session
+from db.tables_phase1 import Account, ph
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -65,21 +67,8 @@ def login_api(
             detail="Tài khoản chưa được kích hoạt. Vui lòng xác thực email trước khi đăng nhập.",
         )
 
-    # 2. Tạo session ID ngẫu nhiên
-    session_id = secrets.token_urlsafe(32)
-
-    # Keep database expiry and the browser cookie lifetime in sync.
-    expires_at = datetime.now(timezone.utc) + SESSION_TTL
-
-    # 4. Lưu session vào database
-    user_session = UserSession(
-        session_id=session_id,
-        account_id=acc.account_id,
-        expires_at=expires_at,
-    )
-
-    session.add(user_session)
-    session.commit()
+    # 2. Tạo và lưu session vào Redis
+    session_id = create_session(acc.account_id)
 
     # 5. Trả response + gửi session ID cho browser qua cookie
     response = JSONResponse(
@@ -97,7 +86,7 @@ def login_api(
         httponly=True,
         secure=SESSION_COOKIE_SECURE,
         samesite="lax",
-        max_age=int(SESSION_TTL.total_seconds()),
+        max_age=SESSION_TTL_SECONDS,
     )
 
     return response
@@ -114,27 +103,17 @@ def get_current_account(
             detail="Chưa đăng nhập",
         )
 
-    user_session = session.scalar(
-        select(UserSession)
-        .where(UserSession.session_id == session_id)
-    )
+    # 1. Kiểm tra session trong Redis
+    account_id = get_redis_session(session_id)
 
-    if user_session is None:
+    if account_id is None:
         raise HTTPException(
             status_code=401,
-            detail="Session không hợp lệ",
+            detail="Session không hợp lệ hoặc đã hết hạn",
         )
 
-    expires_at = user_session.expires_at
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at <= datetime.now(timezone.utc):
-        raise HTTPException(
-            status_code=401,
-            detail="Session đã hết hạn",
-        )
-
-    account = session.get(Account, user_session.account_id)
+    # 2. Lấy thông tin tài khoản từ PostgreSQL
+    account = session.get(Account, account_id)
 
     if account is None:
         raise HTTPException(
@@ -165,29 +144,39 @@ def update_current_account(
     session: Session = Depends(get_session),
 ):
     if session_id is None:
-        raise HTTPException(status_code=401, detail="Chưa đăng nhập")
+        raise HTTPException(
+            status_code=401,
+            detail="Chưa đăng nhập",
+        )
 
-    user_session = session.get(UserSession, session_id)
-    if user_session is None:
-        raise HTTPException(status_code=401, detail="Session không hợp lệ")
+    # 1. Kiểm tra session trong Redis
+    account_id = get_redis_session(session_id)
 
-    expires_at = user_session.expires_at
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at <= datetime.now(timezone.utc):
-        raise HTTPException(status_code=401, detail="Session đã hết hạn")
+    if account_id is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Session không hợp lệ hoặc đã hết hạn",
+        )
 
-    account = session.get(Account, user_session.account_id)
+    # 2. Lấy thông tin tài khoản từ PostgreSQL
+    account = session.get(Account, account_id)
+
     if account is None:
-        raise HTTPException(status_code=401, detail="Tài khoản không tồn tại")
+        raise HTTPException(
+            status_code=401,
+            detail="Tài khoản không tồn tại",
+        )
 
+    # 3. Kiểm tra tên tài khoản mới
     account_name = data.account_name.strip()
+
     if len(account_name) < 3:
         raise HTTPException(
             status_code=422,
             detail="Tên tài khoản phải có ít nhất 3 ký tự",
         )
 
+    # 4. Cập nhật tên trong PostgreSQL
     account.account_name = account_name
     session.commit()
     session.refresh(account)

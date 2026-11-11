@@ -1,17 +1,18 @@
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Cookie, Depends, HTTPException
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from db.schemas import AccountRoleUpdateIn
+from db.redis_session import (
+    get_session as get_redis_session,
+    delete_account_sessions,
+)
 from db.session import get_session
 from db.tables_phase1 import (
     Account,
     AccountRole,
     Admin,
     ManageClass,
-    Session as UserSession,
     StudentClass,
 )
 from db.tables_phase2 import Contest, Problem, Submission
@@ -23,24 +24,37 @@ def get_super_admin(
     session_id: str | None,
     session: Session,
 ) -> Account:
+    # 1. Kiểm tra đã đăng nhập chưa
     if session_id is None:
-        raise HTTPException(status_code=401, detail="Chưa đăng nhập")
+        raise HTTPException(
+            status_code=401,
+            detail="Chưa đăng nhập",
+        )
 
-    user_session = session.get(UserSession, session_id)
-    if user_session is None:
-        raise HTTPException(status_code=401, detail="Session không hợp lệ")
+    # 2. Kiểm tra session trong Redis
+    account_id = get_redis_session(session_id)
 
-    expires_at = user_session.expires_at
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at <= datetime.now(timezone.utc):
-        raise HTTPException(status_code=401, detail="Session đã hết hạn")
+    if account_id is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Session không hợp lệ hoặc đã hết hạn",
+        )
 
-    account = session.get(Account, user_session.account_id)
+    # 3. Lấy thông tin account từ PostgreSQL
+    account = session.get(Account, account_id)
+
     if account is None:
-        raise HTTPException(status_code=401, detail="Tài khoản không tồn tại")
+        raise HTTPException(
+            status_code=401,
+            detail="Tài khoản không tồn tại",
+        )
+
+    # 4. Kiểm tra quyền Super Admin
     if not account.is_super_admin:
-        raise HTTPException(status_code=403, detail="Không có quyền quản lý tài khoản")
+        raise HTTPException(
+            status_code=403,
+            detail="Không có quyền quản lý tài khoản",
+        )
 
     return account
 
@@ -50,21 +64,28 @@ def get_authenticated_account(
     session: Session,
 ) -> Account:
     if session_id is None:
-        raise HTTPException(status_code=401, detail="Chưa đăng nhập")
+        raise HTTPException(
+            status_code=401,
+            detail="Chưa đăng nhập",
+        )
 
-    user_session = session.get(UserSession, session_id)
-    if user_session is None:
-        raise HTTPException(status_code=401, detail="Session không hợp lệ")
+    # 1. Kiểm tra session trong Redis
+    account_id = get_redis_session(session_id)
 
-    expires_at = user_session.expires_at
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at <= datetime.now(timezone.utc):
-        raise HTTPException(status_code=401, detail="Session đã hết hạn")
+    if account_id is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Session không hợp lệ hoặc đã hết hạn",
+        )
 
-    account = session.get(Account, user_session.account_id)
+    # 2. Lấy thông tin account từ PostgreSQL
+    account = session.get(Account, account_id)
+
     if account is None:
-        raise HTTPException(status_code=401, detail="Tài khoản không tồn tại")
+        raise HTTPException(
+            status_code=401,
+            detail="Tài khoản không tồn tại",
+        )
 
     return account
 
@@ -204,9 +225,6 @@ def delete_account(
         session.delete(target_account.student)
 
     session.execute(
-        delete(UserSession).where(UserSession.account_id == target_account.account_id)
-    )
-    session.execute(
         update(Problem)
         .where(Problem.created_by == target_account.account_id)
         .values(created_by=None)
@@ -223,6 +241,9 @@ def delete_account(
     )
     session.delete(target_account)
     session.commit()
+
+    # Thu hồi toàn bộ Redis Session sau khi xóa account thành công
+    delete_account_sessions(account_id)
 
     return {
         "message": "Xóa tài khoản thành công",
