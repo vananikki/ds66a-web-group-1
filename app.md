@@ -46,6 +46,8 @@ quyền vẫn được xác minh ở API.
 - Trang quản trị chi tiết lớp chia nội dung thành tab **Bài tập**,
   **Cuộc thi**, **Thành viên**. Học viên có thêm tab **Lịch sử nộp**. Tab
   hỗ trợ bàn phím trái/phải, Home và End.
+- Thành viên lớp xem được danh sách thành viên với tên và vai trò; quản trị
+  lớp có thể xem thêm thông tin liên hệ và các công cụ quản lý theo quyền.
 - Trang nộp bài và trang lịch sử dùng bố cục nhiều cột ở màn hình rộng, tự xếp
   dọc trên màn hình nhỏ.
 - Các form phản hồi trạng thái/lỗi ngay tại khu vực thao tác; danh sách rỗng
@@ -134,12 +136,18 @@ người dùng, và endpoint lấy mã nguồn cũng xác minh quyền sở hữ
 - Trang chi tiết lớp chia bài tập, cuộc thi và thành viên thành các tab riêng.
   Học viên có tab lịch sử nộp trong lớp; admin có công cụ gán bài, tạo contest,
   duyệt yêu cầu và mời thành viên/quản trị viên theo quyền được cấp.
-- API yêu cầu người dùng là thành viên lớp để xem nội dung học viên; mã nguồn
-  chỉ người nộp xem được, ngoại trừ quyền quản trị contest theo chính sách API.
+- Thành viên đã tham gia lớp xem được contest đang diễn ra và contest đã kết
+  thúc, gồm đề, bảng xếp hạng và lịch sử bài nộp; contest chưa bắt đầu chỉ quản
+  trị viên lớp mới xem được. Chỉ thành viên lớp mới nộp được trong thời gian thi.
+- Mã nguồn bài nộp chỉ người nộp và quản trị viên lớp có quyền xem trong contest
+  tương ứng đọc được; mã nguồn không nằm trong dữ liệu lịch sử dạng danh sách.
 - Lượt nộp public từ kho bài tập không gắn với lớp. Các lượt cũ không có thông
   tin lớp đáng tin cậy sẽ không được gán vào feed lớp một cách suy đoán.
-- Học viên chỉ nộp bài vào contest trong thời gian mở; trang contest có đề bài,
-  vùng nộp bài, bảng xếp hạng và lịch sử contest.
+- Quản trị viên được phân công quản lý lớp có thể xem contest ở mọi trạng thái
+  và sửa tên, mô tả, thời gian, danh sách/thứ tự bài. Việc thay danh sách bài
+  không xóa lịch sử nộp đã có.
+- Trang contest có đề bài, vùng nộp (chỉ khi có quyền và đang trong thời gian
+  thi), bảng xếp hạng và lịch sử contest phân trang.
 
 ## Điều hướng liên quan
 

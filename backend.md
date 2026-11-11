@@ -48,7 +48,12 @@ Chi tiết request/response có thể xem tại OpenAPI `/docs` khi backend đan
 
 Vai trò là `USER`, `ADMIN`, `SUPER_ADMIN`. Backend luôn xác minh session,
 trạng thái kích hoạt và quyền; ẩn nút trên frontend không phải biện pháp phân
-quyền. Session/cookie có thời hạn một ngày.
+quyền. Session/cookie có thời hạn một ngày. Thành viên đã tham gia lớp có thể
+xem contest, bảng xếp hạng và lịch sử khi contest đang diễn ra hoặc đã kết thúc;
+contest sắp diễn ra chỉ quản trị viên lớp mới xem được. Quản trị viên được phân
+công quản lý lớp có thể xem mọi trạng thái; việc sửa contest thay danh sách/thứ
+tự bài cũng không xóa các bài nộp cũ, nên lịch sử cũ có thể tham chiếu tới bài
+không còn thuộc cấu hình contest hiện tại.
 
 ### Bài tập và chấm bài
 
@@ -87,13 +92,16 @@ Giới hạn/đầu vào bài tập được định nghĩa bởi `ProblemCreate
 | `GET` | `/student/classes` | Liệt kê lớp đã tham gia |
 | `GET` | `/student/available-classes` | Khám phá lớp và trạng thái yêu cầu |
 | `POST` | `/student/classes/{class_id}/join-requests` | Gửi yêu cầu vào lớp |
-| `GET` | `/student/classes/{class_id}` | Thành viên: xem bài và contest của lớp |
+| `GET` | `/student/classes/{class_id}` | Thành viên: xem bài, danh sách thành viên và contest của lớp |
 | `GET` | `/student/classes/{class_id}/submissions` | Lịch sử bài nộp trong lớp |
 | `POST` | `/student/classes/{class_id}/problems/{problem_id}/submissions` | Nộp bài trong lớp |
 
 Quản trị lớp được xác định qua quan hệ `manage_class`; chủ lớp là quản trị
 viên sở hữu lớp. Các endpoint kiểm tra riêng quyền quản trị, chủ lớp và thành
 viên lớp theo từng thao tác.
+
+API lớp dành cho thành viên chỉ trả tên và vai trò trong danh sách thành viên;
+endpoint quản trị lớp trả thêm email và thông tin roster phục vụ công cụ quản lý.
 
 ### Contest và bài nộp
 
@@ -105,9 +113,11 @@ viên lớp theo từng thao tác.
 | `POST` | `/admin/judge/contests/{contest_id}/problems` | Thêm bài vào contest |
 | `POST` | `/admin/judge/academic-classes/{class_id}/contests` | Gán contest có sẵn vào lớp |
 | `POST` | `/admin/judge/academic-classes/{class_id}/contests/create` | Tạo contest và gán bài lớp |
+| `PATCH` | `/admin/judge/academic-classes/{class_id}/contests/{contest_id}` | Quản trị lớp: sửa contest và thay danh sách/thứ tự bài |
 | `GET` | `/admin/judge/contests/{contest_id}/standings` | Xem bảng xếp hạng |
-| `GET` | `/student/classes/{class_id}/contests/{contest_id}` | Thành viên/quản trị lớp: xem contest |
-| `GET` | `/student/classes/{class_id}/contests/{contest_id}/standings` | Xem xếp hạng contest trong lớp |
+| `GET` | `/student/classes/{class_id}/contests/{contest_id}` | Thành viên lớp xem contest đang diễn ra/đã kết thúc; quản trị lớp xem mọi trạng thái |
+| `GET` | `/student/classes/{class_id}/contests/{contest_id}/standings` | Thành viên lớp xem khi contest đang diễn ra/đã kết thúc; quản trị lớp xem mọi trạng thái |
+| `GET` | `/student/classes/{class_id}/submissions?contest_id={contest_id}` | Thành viên lớp xem lịch sử contest đang diễn ra/đã kết thúc; quản trị lớp xem mọi trạng thái |
 | `GET` | `/admin/judge/submissions` | SUPER_ADMIN: quản lý bài nộp |
 | `DELETE` | `/admin/judge/submissions/{submission_id}` | SUPER_ADMIN: xóa bài nộp |
 | `GET` | `/student/submissions` | Lịch sử toàn server, có lọc và phân trang |

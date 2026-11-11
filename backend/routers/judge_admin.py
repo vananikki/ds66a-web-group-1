@@ -690,9 +690,17 @@ def get_academic_class_detail(
             {
                 "contest_id": contest.contest_id,
                 "contest_name": contest.contest_name,
+                "description": contest.description,
                 "start_time": _as_utc(contest.start_time).isoformat(),
                 "end_time": _as_utc(contest.end_time).isoformat(),
                 "status": _contest_status(contest),
+                "problem_ids": [
+                    item.problem_id
+                    for item in sorted(
+                        contest.contest_problems,
+                        key=lambda problem: problem.problem_order,
+                    )
+                ],
             }
         )
 
@@ -1009,6 +1017,9 @@ def get_student_class(
         .options(
             selectinload(AcademicClass.class_problems).selectinload(AcademicClassProblem.problem),
             selectinload(AcademicClass.class_contests).selectinload(AcademicClassContest.contest),
+            selectinload(AcademicClass.student_classes)
+            .selectinload(StudentClass.student)
+            .selectinload(Student.account),
         )
         .where(AcademicClass.class_id == class_id)
     )
@@ -1036,6 +1047,14 @@ def get_student_class(
         "class_id": academic_class.class_id,
         "class_name": academic_class.class_name,
         "problems": visible_problems,
+        "students": [
+            {
+                "account_id": item.student.account_id,
+                "account_name": item.student.account.account_name,
+                "account_role": item.student.account.role.value,
+            }
+            for item in sorted(academic_class.student_classes, key=lambda member: member.student_id)
+        ],
         "contests": [
             {
                 "contest_id": item.contest.contest_id,
@@ -1081,16 +1100,19 @@ def get_student_contest(
     )
     if contest is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy cuộc thi")
-    _require_active_contest(contest)
+    is_class_manager = _is_class_manager(account, class_id, session)
+    if not is_class_manager and _contest_status(contest) == "upcoming":
+        _require_active_contest(contest)
     status = _contest_status(contest)
     now = datetime.now(timezone.utc)
-    can_view_all_submissions = _is_class_manager(account, class_id, session)
+    can_view_all_submissions = is_class_manager
     visible_problems = []
     for item in contest.contest_problems:
         if (
             item.problem.access_modifier == AccessModifier.HIDDEN
             and item.problem.created_by != account.account_id
             and is_class_member
+            and not is_class_manager
             and not _contest_hidden_problem_visible_to_student(
                 session,
                 account,
@@ -1132,6 +1154,7 @@ def get_student_contest(
         "status": status,
         "can_submit": status == "active" and is_class_member,
         "can_view_all_submissions": can_view_all_submissions,
+        "can_manage": is_class_manager,
         "problems": visible_problems,
         "server_time": now.isoformat(),
     }
@@ -1149,7 +1172,8 @@ def get_student_contest_standings(
     contest = session.get(Contest, contest_id)
     if contest is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy cuộc thi")
-    _require_active_contest(contest)
+    if not _is_class_manager(account, class_id, session) and _contest_status(contest) == "upcoming":
+        _require_active_contest(contest)
 
     contest_problem_rows = session.execute(
         select(
@@ -1274,7 +1298,8 @@ def list_student_submissions(
         contest = session.get(Contest, contest_id)
         if contest is None:
             raise HTTPException(status_code=404, detail="Không tìm thấy cuộc thi")
-        _require_active_contest(contest)
+        if not _is_class_manager(account, class_id, session) and _contest_status(contest) == "upcoming":
+            _require_active_contest(contest)
     submission_filters = [Submission.class_id == class_id]
     if contest_id is not None:
         submission_filters.append(Submission.contest_id == contest_id)
@@ -1626,7 +1651,8 @@ def get_class_manager_contest_submission_source(
     contest = session.get(Contest, contest_id)
     if contest is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy cuộc thi")
-    _require_active_contest(contest)
+    if not _is_class_manager(account, class_id, session):
+        _require_active_contest(contest)
     submission = session.scalar(
         select(Submission).where(
             Submission.submission_id == submission_id,
@@ -2210,6 +2236,59 @@ def create_class_contest(
     for problem_order, problem_id in enumerate(payload.problem_ids, start=1):
         add_problem_to_contest(session, contest.contest_id, problem_id, problem_order)
     session.add(AcademicClassContest(class_id=class_id, contest_id=contest.contest_id))
+    session.commit()
+    session.refresh(contest)
+    return _serialize_contest(contest)
+
+
+@router.patch(
+    "/academic-classes/{class_id}/contests/{contest_id}",
+)
+def update_class_contest(
+    class_id: int,
+    contest_id: int,
+    payload: ClassContestCreateIn,
+    session_id: str | None = Cookie(default=None),
+    session: Session = Depends(get_session),
+):
+    account = _require_admin_account(session_id, session)
+    _require_class_manager(account, class_id, session)
+    if session.get(AcademicClassContest, (class_id, contest_id)) is None:
+        raise HTTPException(status_code=404, detail="Cuộc thi không thuộc lớp này")
+
+    contest = session.get(Contest, contest_id)
+    if contest is None:
+        raise HTTPException(status_code=404, detail="Contest không tồn tại")
+
+    start_time = _parse_datetime(payload.start_time.isoformat(), "start_time")
+    end_time = _parse_datetime(payload.end_time.isoformat(), "end_time")
+    if end_time <= start_time:
+        raise HTTPException(
+            status_code=422,
+            detail="Thời điểm kết thúc phải sau thời điểm bắt đầu",
+        )
+
+    class_problem_ids = set(
+        session.scalars(
+            select(AcademicClassProblem.problem_id).where(
+                AcademicClassProblem.class_id == class_id
+            )
+        ).all()
+    )
+    if not set(payload.problem_ids).issubset(class_problem_ids):
+        raise HTTPException(status_code=422, detail="Chỉ có thể thêm bài tập đã thuộc lớp")
+
+    contest.contest_name = payload.contest_name
+    contest.description = payload.description or None
+    contest.start_time = start_time
+    contest.end_time = end_time
+    session.execute(
+        delete(ContestProblem).where(ContestProblem.contest_id == contest_id)
+    )
+    session.flush()
+    for problem_order, problem_id in enumerate(payload.problem_ids, start=1):
+        add_problem_to_contest(session, contest_id, problem_id, problem_order)
+
     session.commit()
     session.refresh(contest)
     return _serialize_contest(contest)
