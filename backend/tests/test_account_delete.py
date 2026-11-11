@@ -1,3 +1,5 @@
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -239,8 +241,8 @@ def test_verification_email_rate_limits_per_address_and_globally():
     limiter.reserve(email)
     limiter.mark_sent(email)
 
-    now[0] += 179
-    with pytest.raises(RuntimeError, match="3 phút"):
+    now[0] += auth_router.OTP_RESEND_SECONDS - 1
+    with pytest.raises(RuntimeError, match="1 phút"):
         limiter.reserve(email)
 
     now[0] += 1
@@ -251,6 +253,7 @@ def test_verification_email_rate_limits_per_address_and_globally():
     for index in range(auth_router.EMAIL_SEND_LIMIT):
         target = f"user{index}@example.com"
         global_limiter.reserve(target)
+        global_limiter.mark_send_attempt()
         global_limiter.mark_sent(target)
 
     assert global_limiter.wait_for_global_slot() == 60
@@ -258,7 +261,20 @@ def test_verification_email_rate_limits_per_address_and_globally():
     assert global_limiter.wait_for_global_slot() == 0
 
 
-def test_verification_code_expires_after_two_minutes():
+def test_verification_emails_are_spaced_thirty_seconds_apart():
+    now = [100.0]
+    limiter = auth_router._EmailRateLimiter(clock=lambda: now[0])
+
+    assert limiter.wait_for_global_slot() == 0
+    limiter.mark_send_attempt()
+    limiter.mark_sent("first@example.com")
+    assert limiter.wait_for_global_slot() == 30
+
+    now[0] += auth_router.EMAIL_SEND_INTERVAL_SECONDS
+    assert limiter.wait_for_global_slot() == 0
+
+
+def test_verification_code_expires_after_five_minutes():
     email = "expiry@example.com"
     code = auth_router._store_verification_code(email, "123456")
     payload = auth_router._VERIFICATION_CODES[email]
@@ -266,15 +282,16 @@ def test_verification_code_expires_after_two_minutes():
     assert code == "123456"
     assert (
         payload["expires_at"] - payload["sent_at"]
-    ).total_seconds() == auth_router.OTP_TTL_SECONDS == 120
+    ).total_seconds() == auth_router.OTP_TTL_SECONDS == 300
 
 
 def test_send_code_endpoint_queues_email(monkeypatch):
     queued_emails = []
+    delivery_id = "test-delivery-id"
     monkeypatch.setattr(
         auth_router._VERIFICATION_EMAIL_QUEUE,
         "enqueue",
-        queued_emails.append,
+        lambda email: (queued_emails.append(email), delivery_id)[1],
     )
 
     response = TestClient(app).post(
@@ -284,6 +301,70 @@ def test_send_code_endpoint_queues_email(monkeypatch):
 
     assert response.status_code == 202
     assert queued_emails == ["queue@example.com"]
+    assert response.json()["delivery_id"] == delivery_id
+
+
+def test_email_queue_reports_delivery_success(monkeypatch):
+    queue = auth_router._VerificationEmailQueue()
+    delivery_attempted = threading.Event()
+
+    def deliver(email, code):
+        assert email == "delivered@example.com"
+        assert len(code) == 6
+        delivery_attempted.set()
+
+    monkeypatch.setattr(auth_router, "_deliver_verification_code", deliver)
+    request_id = queue.enqueue("delivered@example.com")
+
+    assert delivery_attempted.wait(timeout=2)
+    deadline = time.monotonic() + 2
+    while queue.get_status(request_id) != "sent" and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert queue.get_status(request_id) == "sent"
+    assert "delivered@example.com" in auth_router._VERIFICATION_CODES
+    auth_router._VERIFICATION_CODES.pop("delivered@example.com", None)
+
+
+def test_email_queue_reports_delivery_failure(monkeypatch):
+    queue = auth_router._VerificationEmailQueue()
+    delivery_attempted = threading.Event()
+
+    def fail_delivery(email, code):
+        delivery_attempted.set()
+        raise RuntimeError("Gmail delivery failed")
+
+    monkeypatch.setattr(auth_router, "_deliver_verification_code", fail_delivery)
+    request_id = queue.enqueue("failed@example.com")
+
+    assert delivery_attempted.wait(timeout=2)
+    deadline = time.monotonic() + 2
+    while queue.get_status(request_id) != "failed" and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert queue.get_status(request_id) == "failed"
+    assert "failed@example.com" not in auth_router._VERIFICATION_CODES
+
+
+def test_email_delivery_status_hides_recipient(monkeypatch):
+    delivery_id = "opaque-delivery-id"
+    monkeypatch.setattr(
+        auth_router._VERIFICATION_EMAIL_QUEUE,
+        "get_status",
+        lambda request_id: "sent" if request_id == delivery_id else None,
+    )
+
+    client = TestClient(app)
+    response = client.get(f"/auth/email-delivery/{delivery_id}")
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "sent",
+        "message": "Gmail đã chấp nhận email để gửi.",
+    }
+
+    missing = client.get("/auth/email-delivery/not-a-valid-id")
+    assert missing.status_code == 404
+    assert "email" not in missing.json()
 
 
 def test_forgot_password_flow(monkeypatch):
@@ -291,7 +372,15 @@ def test_forgot_password_flow(monkeypatch):
     email = "reset@example.com"
     code = "123456"
 
-    monkeypatch.setattr(auth_router, "send_verification_code", lambda target_email: {"message": "sent", "email": target_email})
+    monkeypatch.setattr(
+        auth_router,
+        "send_verification_code",
+        lambda target_email: {
+            "message": "queued",
+            "email": target_email,
+            "delivery_id": "reset-delivery-id",
+        },
+    )
     auth_router._VERIFICATION_CODES[email] = {
         "code": code,
         "sent_at": datetime.now(timezone.utc),

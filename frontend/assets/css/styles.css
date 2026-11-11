@@ -3426,7 +3426,8 @@ header nav a {
    TÙY CHỈNH GIAO DIỆN KHUNG SOẠN THẢO CODEMIRROR
    ==================================================== */
 .CodeMirror {
-    height: 480px !important;
+    height: min(58vh, 620px) !important;
+    min-height: 360px;
     border-radius: 8px;
     font-family: 'Consolas', 'Fira Code', 'Monaco', 'Courier New', monospace !important;
     font-size: 14px !important;
@@ -3443,4 +3444,97 @@ header nav a {
 
 .CodeMirror-linenumber {
     color: #94a3b8 !important;
+}
+
+.CodeMirror-hints {
+    z-index: 20;
+    border: 1px solid #475569;
+    border-radius: 8px;
+    background: #172033;
+    color: #e2e8f0;
+    box-shadow: 0 12px 28px rgb(15 23 42 / 28%);
+    font: 0.88rem "SFMono-Regular", Consolas, monospace;
+}
+
+.CodeMirror-hint {
+    padding: 6px 10px;
+    color: #e2e8f0;
+}
+
+li.CodeMirror-hint-active {
+    background: #3156d9;
+    color: #fff;
+}
+
+.editor-shortcuts {
+    margin: -4px 0 0;
+}
+
+.code-runner {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid #d7dfed;
+    border-radius: 10px;
+    background: #f8faff;
+}
+
+.code-runner-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.code-runner-heading h3 {
+    margin: 0;
+    color: #24365f;
+    font-size: 0.96rem;
+}
+
+.code-runner label {
+    display: grid;
+    gap: 7px;
+    color: #334155;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.code-runner textarea,
+.code-run-output,
+.code-run-errors {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 11px 12px;
+    border: 1px solid #cbd7e8;
+    border-radius: 8px;
+    background: #111827;
+    color: #e2e8f0;
+    font: 0.86rem/1.5 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    tab-size: 4;
+}
+
+.code-runner textarea {
+    min-height: 100px;
+    resize: vertical;
+}
+
+.code-run-output,
+.code-run-errors {
+    min-height: 72px;
+    max-height: 280px;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.code-run-errors {
+    border-color: #efb4b4;
+    background: #fff7f7;
+    color: #8c2525;
+}
+
+.code-runner .message {
+    margin: 0;
 }

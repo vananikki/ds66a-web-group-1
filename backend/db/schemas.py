@@ -219,6 +219,20 @@ class StudentSubmissionIn(JudgeRequest):
         return value
 
 
+class StudentRunCodeIn(JudgeRequest):
+    language_id: int = Field(ge=1)
+    source_code: str = Field(min_length=1, max_length=65_536)
+    stdin: str = Field(default="", max_length=16_384)
+    contest_id: int | None = Field(default=None, ge=1)
+
+    @field_validator("source_code")
+    @classmethod
+    def run_source_code_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("source_code không được để trống")
+        return value
+
+
 class ContestCreateIn(JudgeRequest):
     contest_name: str = Field(min_length=1, max_length=255)
     description: str | None = None

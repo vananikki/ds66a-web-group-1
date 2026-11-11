@@ -4,9 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bài tập | Online Judge</title>
-    <link rel="stylesheet" href="../assets/css/styles.css?v=20261103b">
+    <link rel="stylesheet" href="../assets/css/styles.css?v=20261111b">
     <!-- CodeMirror CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
     <!-- CodeMirror Material Darker Theme -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
 </head>
@@ -68,8 +69,23 @@
                         <select id="solution-language" name="language_id" required disabled></select>
                     </label>
                     <label>Mã nguồn
-                        <textarea id="source-code" name="source_code" rows="18" required maxlength="65536" spellcheck="false" placeholder="Nhập mã nguồn..." disabled></textarea>
+                        <textarea id="source-code" name="source_code" rows="18" maxlength="65536" spellcheck="false" placeholder="Nhập mã nguồn..." aria-required="true" aria-describedby="problem-editor-shortcuts" disabled></textarea>
                     </label>
+                    <p id="problem-editor-shortcuts" class="field-hint editor-shortcuts">Tab thụt lề · Ctrl-Space hiện gợi ý · Tự đóng ngoặc</p>
+                    <section id="code-runner" class="code-runner" aria-labelledby="code-runner-heading">
+                        <div class="code-runner-heading">
+                            <h3 id="code-runner-heading">Chạy thử với input</h3>
+                            <button id="run-code" class="secondary" type="button" disabled>▶ Chạy thử</button>
+                        </div>
+                        <label for="run-input">Input
+                            <textarea id="run-input" rows="4" maxlength="16384" spellcheck="false" placeholder="Nhập dữ liệu đầu vào..."></textarea>
+                        </label>
+                        <p id="run-status" class="message" role="status" aria-live="polite"></p>
+                        <label>Output (stdout)
+                            <pre id="run-output" class="code-run-output" aria-live="polite">Kết quả chạy sẽ hiển thị ở đây.</pre>
+                        </label>
+                        <pre id="run-errors" class="code-run-errors" hidden></pre>
+                    </section>
                     <button type="submit" disabled>Nộp và chấm bài</button>
                     <p id="submit-access-note" class="field-hint" hidden></p>
                     <p id="submission-result" class="message" role="status" aria-live="polite"></p>
@@ -84,9 +100,13 @@
     <!-- CodeMirror Modes: C/C++, Java, Python -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
 
     <!-- Project Scripts -->
-    <script type="module" src="../assets/js/problem_submit.js?v=20261103b"></script>
+    <script type="module" src="../assets/js/problem_submit.js?v=20261111b"></script>
     <script src="../assets/js/nav_active.js"></script>
 </body>
 </html>

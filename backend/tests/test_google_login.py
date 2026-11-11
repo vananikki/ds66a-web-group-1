@@ -50,6 +50,13 @@ def client():
             app.dependency_overrides[get_session] = previous
 
 
+def test_frontend_login_page_is_served_by_backend(client):
+    response = client.get("/modules/login.html")
+
+    assert response.status_code == 200
+    assert 'id="btn-google-login"' in response.text
+
+
 class FakeGoogleFlow:
     def __init__(self, state=None, code_verifier=None):
         self.state = state
@@ -67,9 +74,11 @@ class FakeGoogleFlow:
 
 
 def configure_google(monkeypatch, claims):
+    monkeypatch.setenv("FRONTEND_BASE_URL", "http://localhost:5500")
     monkeypatch.delenv("GOOGLE_CLIENT_SECRETS_FILE", raising=False)
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client-id")
     monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "test-client-secret")
+    monkeypatch.setattr(login, "SESSION_COOKIE_SECURE", False)
     monkeypatch.setattr(
         login,
         "_create_google_flow",

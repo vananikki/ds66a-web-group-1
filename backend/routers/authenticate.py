@@ -38,10 +38,12 @@ GOOGLE_TOKEN_PATH = os.getenv(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "token.json")),
 )
 
-OTP_TTL_SECONDS = 2 * 60
-OTP_RESEND_SECONDS = 3 * 60
+OTP_TTL_SECONDS = 5 * 60
+OTP_RESEND_SECONDS = 60
 EMAIL_SEND_LIMIT = 5
 EMAIL_SEND_WINDOW_SECONDS = 60
+EMAIL_SEND_INTERVAL_SECONDS = 30
+EMAIL_DELIVERY_STATUS_TTL_SECONDS = 15 * 60
 _VERIFICATION_CODES: dict[str, dict[str, str | datetime]] = {}
 _GMAIL_SERVICE = None
 _LOGGER = logging.getLogger(__name__)
@@ -133,6 +135,7 @@ class _EmailRateLimiter:
     def __init__(self, clock=time.monotonic):
         self._clock = clock
         self._sent_times: deque[float] = deque()
+        self._last_send_attempt: float | None = None
         self._last_sent_by_email: dict[str, float] = {}
         self._pending_emails: set[str] = set()
         self._lock = threading.Lock()
@@ -155,7 +158,7 @@ class _EmailRateLimiter:
                 remaining = OTP_RESEND_SECONDS - (now - last_sent)
                 if remaining > 0:
                     raise RuntimeError(
-                        "Vui lòng chờ 3 phút giữa các lần gửi email đến cùng địa chỉ."
+                        "Vui lòng chờ 1 phút giữa các lần gửi email đến cùng địa chỉ."
                     )
                 self._last_sent_by_email.pop(email, None)
             self._pending_emails.add(email)
@@ -168,17 +171,33 @@ class _EmailRateLimiter:
                 and now - self._sent_times[0] >= EMAIL_SEND_WINDOW_SECONDS
             ):
                 self._sent_times.popleft()
-            if len(self._sent_times) < EMAIL_SEND_LIMIT:
-                return 0
-            return max(
-                0,
-                self._sent_times[0] + EMAIL_SEND_WINDOW_SECONDS - now,
+            interval_wait = (
+                0
+                if self._last_send_attempt is None
+                else max(
+                    0,
+                    self._last_send_attempt + EMAIL_SEND_INTERVAL_SECONDS - now,
+                )
             )
+            limit_wait = (
+                0
+                if len(self._sent_times) < EMAIL_SEND_LIMIT
+                else max(
+                    0,
+                    self._sent_times[0] + EMAIL_SEND_WINDOW_SECONDS - now,
+                )
+            )
+            return max(interval_wait, limit_wait)
+
+    def mark_send_attempt(self) -> None:
+        now = self._clock()
+        with self._lock:
+            self._sent_times.append(now)
+            self._last_send_attempt = now
 
     def mark_sent(self, email: str) -> None:
         now = self._clock()
         with self._lock:
-            self._sent_times.append(now)
             self._last_sent_by_email[email] = now
             self._pending_emails.discard(email)
 
@@ -189,15 +208,40 @@ class _EmailRateLimiter:
 
 class _VerificationEmailQueue:
     def __init__(self):
-        self._emails: deque[str] = deque()
+        self._emails: deque[tuple[str, str]] = deque()
         self._condition = threading.Condition()
         self._rate_limiter = _EmailRateLimiter()
         self._worker: threading.Thread | None = None
+        self._delivery_status: dict[str, tuple[str, float]] = {}
 
-    def enqueue(self, email: str) -> None:
+    def _clean_expired_statuses(self) -> None:
+        now = time.monotonic()
+        expired_ids = [
+            request_id
+            for request_id, (_, updated_at) in self._delivery_status.items()
+            if now - updated_at >= EMAIL_DELIVERY_STATUS_TTL_SECONDS
+        ]
+        for request_id in expired_ids:
+            self._delivery_status.pop(request_id, None)
+
+    def _set_status(self, request_id: str, status: str) -> None:
         with self._condition:
+            self._delivery_status[request_id] = (status, time.monotonic())
+            self._condition.notify_all()
+
+    def get_status(self, request_id: str) -> str | None:
+        with self._condition:
+            self._clean_expired_statuses()
+            status = self._delivery_status.get(request_id)
+            return status[0] if status else None
+
+    def enqueue(self, email: str) -> str:
+        request_id = secrets.token_urlsafe(32)
+        with self._condition:
+            self._clean_expired_statuses()
             self._rate_limiter.reserve(email)
-            self._emails.append(email)
+            self._delivery_status[request_id] = ("queued", time.monotonic())
+            self._emails.append((email, request_id))
             if self._worker is None or not self._worker.is_alive():
                 self._worker = threading.Thread(
                     target=self._run,
@@ -208,9 +252,11 @@ class _VerificationEmailQueue:
                     self._worker.start()
                 except RuntimeError:
                     self._emails.pop()
+                    self._delivery_status.pop(request_id, None)
                     self._rate_limiter.release(email)
                     raise
             self._condition.notify()
+        return request_id
 
     def _run(self) -> None:
         while True:
@@ -221,16 +267,23 @@ class _VerificationEmailQueue:
                 if wait_seconds > 0:
                     self._condition.wait(timeout=wait_seconds)
                     continue
-                email = self._emails.popleft()
+                email, request_id = self._emails.popleft()
+                self._delivery_status[request_id] = ("sending", time.monotonic())
 
             code = _generate_verification_code()
             try:
+                self._rate_limiter.mark_send_attempt()
                 _deliver_verification_code(email, code)
-                self._rate_limiter.mark_sent(email)
                 _store_verification_code(email, code)
+                self._rate_limiter.mark_sent(email)
+                self._set_status(request_id, "sent")
             except Exception:
-                _LOGGER.exception("Could not deliver a queued verification email")
+                _LOGGER.exception(
+                    "Could not deliver a queued verification email (request_id=%s)",
+                    request_id,
+                )
                 self._rate_limiter.release(email)
+                self._set_status(request_id, "failed")
                 continue
 
 
@@ -271,7 +324,7 @@ def _deliver_verification_code(email: str, code: str) -> None:
     body = (
         "Xin chào!\n\n"
         f"Mã xác thực email của bạn là: {code}\n"
-        "Mã này có hiệu lực trong 2 phút.\n\n"
+        "Mã này có hiệu lực trong 5 phút.\n\n"
         "Nếu bạn không yêu cầu mã này, hãy bỏ qua email này."
     )
     try:
@@ -302,11 +355,12 @@ def send_verification_code(email: str) -> dict:
     if not normalized_email or "@" not in normalized_email:
         raise ValueError("Email không hợp lệ")
 
-    _VERIFICATION_EMAIL_QUEUE.enqueue(normalized_email)
+    request_id = _VERIFICATION_EMAIL_QUEUE.enqueue(normalized_email)
 
     return {
-        "message": "Yêu cầu gửi mã xác thực đã được đưa vào hàng đợi.",
+        "message": "Yêu cầu gửi mã xác thực đã được tiếp nhận.",
         "email": normalized_email,
+        "delivery_id": request_id,
     }
 
 
@@ -399,8 +453,27 @@ def forgot_password_api(
         raise HTTPException(status_code=429, detail=str(exc)) from exc
 
     return {
-        "message": "Mã xác thực đặt lại mật khẩu đã được gửi đến email của bạn.",
+        "message": "Yêu cầu gửi mã đặt lại mật khẩu đã được tiếp nhận.",
         **result,
+    }
+
+
+@router.get("/email-delivery/{request_id}")
+def email_delivery_status(request_id: str):
+    status = _VERIFICATION_EMAIL_QUEUE.get_status(request_id)
+    if status is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Không tìm thấy yêu cầu gửi email hoặc yêu cầu đã hết hạn.",
+        )
+    return {
+        "status": status,
+        "message": {
+            "queued": "Yêu cầu đang chờ gửi.",
+            "sending": "Đang gửi email.",
+            "sent": "Gmail đã chấp nhận email để gửi.",
+            "failed": "Máy chủ không gửi được email. Vui lòng thử lại sau.",
+        }[status],
     }
 
 

@@ -1,4 +1,4 @@
-import { apiFetch, readResponse } from "./api.js?v=20261029a";
+import { apiFetch, readResponse } from "./api.js?v=20261111b";
 
 const form = document.getElementById("forgot-password-form");
 const statusMessage = document.getElementById("status-message");
@@ -34,8 +34,13 @@ async function sendVerificationCode() {
 
         const data = await readResponse(response);
         if (response.ok) {
-            setStatus("Yêu cầu đã được đưa vào hàng đợi. Mã xác thực sẽ sớm được gửi.");
-            codeInput.focus();
+            if (!data.delivery_id) {
+                setStatus("Server chưa cấp mã theo dõi gửi email. Vui lòng thử lại.", true);
+                return;
+            }
+
+            setStatus("Yêu cầu đã được tiếp nhận. Đang chờ xác nhận gửi email...");
+            await waitForEmailDelivery(data.delivery_id);
             return;
         }
 
@@ -46,6 +51,54 @@ async function sendVerificationCode() {
     } finally {
         sendCodeButton.disabled = false;
     }
+}
+
+async function waitForEmailDelivery(deliveryId) {
+    const maxAttempts = 65;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+
+        try {
+            const response = await apiFetch(
+                `/auth/email-delivery/${encodeURIComponent(deliveryId)}`
+            );
+            const data = await readResponse(response);
+            if (!response.ok) {
+                setStatus(data.detail || "Không thể kiểm tra trạng thái gửi email.", true);
+                return;
+            }
+
+            if (data.status === "sent") {
+                setStatus(
+                    "Gmail đã chấp nhận email để gửi. Nếu chưa thấy thư, hãy kiểm tra Spam/Junk."
+                );
+                codeInput.focus();
+                return;
+            }
+
+            if (data.status === "failed") {
+                setStatus(
+                    "Máy chủ không gửi được email. Vui lòng báo quản trị viên kiểm tra cấu hình và log gửi thư.",
+                    true
+                );
+                return;
+            }
+
+            setStatus(
+                data.status === "sending"
+                    ? "Đang gửi email..."
+                    : "Email đang chờ trong hàng đợi..."
+            );
+        } catch (error) {
+            console.error("Could not check email delivery status:", error);
+            setStatus("Không thể kiểm tra trạng thái gửi email.", true);
+            return;
+        }
+    }
+
+    setStatus(
+        "Email vẫn đang chờ xử lý. Hãy kiểm tra hộp thư sau ít phút; nếu chưa nhận được, báo quản trị viên."
+    );
 }
 
 form.addEventListener("submit", async (event) => {

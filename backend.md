@@ -43,6 +43,7 @@ Chi tiết request/response có thể xem tại OpenAPI `/docs` khi backend đan
 | `POST` | `/auth/logout` | Xóa session hiện tại và cookie |
 | `GET`, `PATCH` | `/auth/me` | Đọc hồ sơ hiện tại; cập nhật tên |
 | `POST` | `/auth/forgot-password` | Gửi mã đặt lại mật khẩu |
+| `GET` | `/auth/email-delivery/{request_id}` | Kiểm tra trạng thái yêu cầu gửi email đang chờ |
 | `POST` | `/auth/reset-password` | Đặt mật khẩu mới bằng mã xác thực |
 | `GET` | `/admin/accounts` | SUPER_ADMIN: liệt kê tài khoản |
 | `PATCH` | `/admin/accounts/{account_id}/role` | SUPER_ADMIN: đổi vai trò |
@@ -169,9 +170,15 @@ cổng `8000`. Dùng cùng hostname (`localhost` hoặc `127.0.0.1`) xuyên su�
 Sau khi đổi `.env` hoặc tệp OAuth, khởi động lại backend.
 
 Gửi email xác thực/đặt lại mật khẩu cần cấu hình OAuth Gmail. Mã xác thực và
-giới hạn gửi hiện ở bộ nhớ tiến trình: mã hết hạn sau 2 phút, gửi lại cùng
-địa chỉ cách nhau 3 phút, tối đa 5 email/phút. Vì dữ liệu không chia sẻ giữa
-các worker và mất khi restart, chỉ chạy một worker nếu dùng các giới hạn này.
+giới hạn gửi hiện ở bộ nhớ tiến trình: mã hết hạn sau 5 phút, gửi lại cùng
+địa chỉ cách nhau 1 phút, mỗi lần thử gửi cách nhau ít nhất 30 giây và tối đa
+5 lần thử/phút. Vì dữ liệu không chia sẻ giữa các worker và mất khi restart,
+chỉ chạy một worker nếu dùng các giới hạn này.
+Endpoint gửi trả `delivery_id`; frontend dùng mã ngẫu nhiên này để kiểm tra
+trạng thái `queued`, `sending`, `sent` hoặc `failed` trong tối đa 15 phút.
+`sent` nghĩa là Gmail API đã chấp nhận email, không đảm bảo thư vào Inbox;
+người dùng nên kiểm tra Spam/Junk. Lỗi gửi được ghi ở log backend nhưng không
+ghi mã OTP hoặc nội dung email.
 
 ## Chạy local và migration
 

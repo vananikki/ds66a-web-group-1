@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cuộc thi | Online Judge</title>
-    <link rel="stylesheet" href="../assets/css/styles.css?v=20261102h">
+    <link rel="stylesheet" href="../assets/css/styles.css?v=20261111b">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
 </head>
 <body>
     <main class="page-shell">
@@ -78,8 +81,23 @@
                             <select id="solution-language" name="language_id" required></select>
                         </label>
                         <label>Mã nguồn
-                            <textarea name="source_code" rows="18" required maxlength="65536" spellcheck="false" placeholder="Viết lời giải cho bài đang chọn..."></textarea>
+                            <textarea id="contest-source-code" name="source_code" rows="18" maxlength="65536" spellcheck="false" placeholder="Viết lời giải cho bài đang chọn..." aria-required="true" aria-describedby="editor-shortcuts"></textarea>
                         </label>
+                        <p id="editor-shortcuts" class="field-hint editor-shortcuts">Tab thụt lề · Ctrl-Space hiện gợi ý · Tự đóng ngoặc</p>
+                        <section class="code-runner" aria-labelledby="contest-code-runner-heading">
+                            <div class="code-runner-heading">
+                                <h3 id="contest-code-runner-heading">Chạy thử với input</h3>
+                                <button id="run-contest-code" class="secondary" type="button" disabled>▶ Chạy thử</button>
+                            </div>
+                            <label for="contest-run-input">Input
+                                <textarea id="contest-run-input" rows="4" maxlength="16384" spellcheck="false" placeholder="Nhập dữ liệu đầu vào..."></textarea>
+                            </label>
+                            <p id="contest-run-status" class="message" role="status" aria-live="polite"></p>
+                            <label>Output (stdout)
+                                <pre id="contest-run-output" class="code-run-output" aria-live="polite">Kết quả chạy sẽ hiển thị ở đây.</pre>
+                            </label>
+                            <pre id="contest-run-errors" class="code-run-errors" hidden></pre>
+                        </section>
                         <button id="submit-solution" type="submit" disabled>Nộp và chấm bài</button>
                     </form>
                     <p id="submission-result" class="message" role="status" aria-live="polite"></p>
@@ -112,7 +130,14 @@
             </section>
         </section>
     </main>
-    <script type="module" src="../assets/js/contest.js?v=20261104b"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+    <script type="module" src="../assets/js/contest.js?v=20261111b"></script>
     <script src="../assets/js/nav_active.js"></script>
 </body>
 </html>

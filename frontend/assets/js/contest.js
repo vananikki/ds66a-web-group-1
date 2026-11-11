@@ -1,6 +1,8 @@
 import { apiFetch, readResponse, requireAccountAccess } from "./api.js?v=20261029a";
 import { typesetMath } from "./latex.js?v=20261101b";
 import { renderSubmissionHistory } from "./submission_history.js?v=20261102b";
+import { initCodeEditor } from "./code_editor.js?v=20261111a";
+import { attachCodeRunner } from "./code_runner.js?v=20261111b";
 
 const params = new URLSearchParams(window.location.search);
 const classId = params.get("class_id");
@@ -8,6 +10,7 @@ const contestId = params.get("contest_id");
 const pageMessage = document.getElementById("contest-message");
 const countdownElement = document.getElementById("contest-countdown");
 const submitButton = document.getElementById("submit-solution");
+const runButton = document.getElementById("run-contest-code");
 const historyPageSize = 50;
 let contestData;
 let selectedProblem;
@@ -17,6 +20,7 @@ let polling = false;
 let contestEnded = false;
 let pollTimer;
 let countdownTimer;
+let editor;
 const submissionById = new Map();
 
 function escapeHtml(value) {
@@ -56,6 +60,7 @@ function finishContest(message) {
     countdownElement.textContent = "00:00:00";
     document.getElementById("contest-status").textContent = "ĐÃ KẾT THÚC";
     submitButton.disabled = true;
+    runButton.disabled = true;
     if (message) setMessage(pageMessage, message, true);
     clearInterval(pollTimer);
     clearInterval(countdownTimer);
@@ -244,6 +249,7 @@ async function refreshLiveData() {
         );
         await fetchLatestHistory();
         submitButton.disabled = !contestData.can_submit;
+        runButton.disabled = contestEnded || !contestData.can_submit || !selectedProblem;
         renderCountdown();
     } catch (error) {
         if (error.status === 409) {
@@ -329,6 +335,28 @@ async function initialize() {
             if (!languages.length) {
                 throw new Error("Chưa có ngôn ngữ chấm bài. Hãy đồng bộ danh sách Judge0 languages trước.");
             }
+            const editorInstance = initCodeEditor(
+                document.getElementById("contest-source-code"),
+                document.getElementById("solution-language"),
+            );
+            editor = editorInstance?.editor;
+            attachCodeRunner({
+                button: runButton,
+                input: document.getElementById("contest-run-input"),
+                status: document.getElementById("contest-run-status"),
+                stdout: document.getElementById("contest-run-output"),
+                errors: document.getElementById("contest-run-errors"),
+                languageSelect: document.getElementById("solution-language"),
+                getSourceCode: () => editor
+                    ? editor.getValue()
+                    : document.getElementById("contest-source-code").value,
+                getRequest: () => ({
+                    path: `/student/classes/${encodeURIComponent(classId)}/problems/${selectedProblem.problem_id}/run`,
+                    extraPayload: { contest_id: Number(contestId) },
+                }),
+                isAllowed: () => !contestEnded && Boolean(contestData?.can_submit && selectedProblem),
+            });
+            runButton.disabled = !contestData.can_submit || !selectedProblem;
         }
         const standings = await requestJson(
             `/student/classes/${classId}/contests/${contestId}/standings`,
@@ -360,6 +388,14 @@ document.getElementById("contest-submit-form").addEventListener("submit", async 
     submitButton.disabled = true;
     setMessage(document.getElementById("submission-result"), "Đang gửi lời giải tới hệ thống chấm bài...");
     const values = new FormData(form);
+    const sourceCode = editor ? editor.getValue() : values.get("source_code");
+    if (!String(sourceCode || "").trim()) {
+        setMessage(document.getElementById("submission-result"), "Vui lòng nhập mã nguồn trước khi nộp.", true);
+        editor?.focus();
+        submitButton.disabled = contestEnded || !contestData?.can_submit;
+        runButton.disabled = contestEnded || !contestData?.can_submit || !selectedProblem;
+        return;
+    }
     try {
         const result = await requestJson(
             `/student/classes/${classId}/problems/${selectedProblem.problem_id}/submissions`,
@@ -368,7 +404,7 @@ document.getElementById("contest-submit-form").addEventListener("submit", async 
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     language_id: Number(values.get("language_id")),
-                    source_code: values.get("source_code"),
+                    source_code: sourceCode,
                     contest_id: Number(contestId),
                 }),
             },

@@ -634,6 +634,8 @@ def test_problem_ownership_and_public_practice_are_enforced(monkeypatch):
         json={"problem_name": "Changed by another admin"},
         cookies={"session_id": "problem-other-admin-session"},
     ).status_code == 403
+
+
     assert client.patch(
         f"/admin/judge/problems/{public_problem['problem_id']}",
         json={"problem_name": "Changed public problem by another admin"},
@@ -704,6 +706,126 @@ def test_problem_ownership_and_public_practice_are_enforced(monkeypatch):
     assert public_submission.json()["status"] == "Accepted"
     assert public_submission.json()["score"] == 100
     assert "input_data" not in public_submission.json()["testcases"][0]
+
+
+def test_public_code_runner_uses_manual_input_without_saving_submission(monkeypatch):
+    owner_id = _create_account("runner-owner@example.com", AccountRole.ADMIN)
+    student_id = _create_account("runner-student@example.com", AccountRole.USER)
+    _set_session(owner_id, "runner-owner-session")
+    _set_session(student_id, "runner-student-session")
+    with TestingSessionLocal() as db:
+        db.add(Language(language_id=71, name="Python (3.8.1)"))
+        db.commit()
+
+    received_input = []
+
+    def run_judge0(source_code, language_id, testcase, time_limit, memory_limit, **kwargs):
+        received_input.append(testcase.input_data)
+        return {
+            "status": {"id": 3, "description": "Accepted"},
+            "stdout": f"output for {testcase.input_data}",
+            "stderr": "",
+            "compile_output": "",
+            "time": "0.025",
+            "memory": 1024,
+        }
+
+    monkeypatch.setattr(judge_admin, "_run_judge0", run_judge0)
+    client = TestClient(app)
+    problem_response = client.post(
+        "/admin/judge/problems",
+        json={
+            "problem_name": "Manual input runner",
+            "time_limit": 1,
+            "memory_limit": 256,
+            "access_modifier": "public",
+            "testcases": [
+                {
+                    "input_data": "hidden input",
+                    "expected_output": "hidden output",
+                    "point": 100,
+                }
+            ],
+        },
+        cookies={"session_id": "runner-owner-session"},
+    )
+    assert problem_response.status_code == 200, problem_response.text
+    problem_id = problem_response.json()["problem_id"]
+
+    response = client.post(
+        f"/student/problems/{problem_id}/run",
+        json={
+            "language_id": 71,
+            "source_code": "print(input())",
+            "stdin": "my manual input\n",
+        },
+        cookies={"session_id": "runner-student-session"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "status": "Accepted",
+        "status_id": 3,
+        "stdout": "output for my manual input\n",
+        "stderr": "",
+        "compile_output": "",
+        "runtime_ms": 25,
+        "memory_kb": 1024,
+    }
+    assert received_input == ["my manual input\n"]
+    with TestingSessionLocal() as db:
+        student = Student(account_id=student_id)
+        academic_class = AcademicClass(class_name="Manual runner class")
+        db.add_all([student, academic_class])
+        db.flush()
+        db.add_all(
+            [
+                StudentClass(
+                    class_id=academic_class.class_id,
+                    student_id=student.student_id,
+                ),
+                AcademicClassProblem(
+                    class_id=academic_class.class_id,
+                    problem_id=problem_id,
+                ),
+            ]
+        )
+        class_id = academic_class.class_id
+        db.commit()
+    class_response = client.post(
+        f"/student/classes/{class_id}/problems/{problem_id}/run",
+        json={
+            "language_id": 71,
+            "source_code": "print(input())",
+            "stdin": "class input\n",
+        },
+        cookies={"session_id": "runner-student-session"},
+    )
+    assert class_response.status_code == 200, class_response.text
+    assert class_response.json()["stdout"] == "output for class input\n"
+    assert received_input == ["my manual input\n", "class input\n"]
+    with TestingSessionLocal() as db:
+        assert db.query(Submission).count() == 0
+
+    private_problem = client.post(
+        "/admin/judge/problems",
+        json={
+            "problem_name": "Private runner problem",
+            "time_limit": 1,
+            "memory_limit": 256,
+        },
+        cookies={"session_id": "runner-owner-session"},
+    ).json()
+    denied = client.post(
+        f"/student/problems/{private_problem['problem_id']}/run",
+        json={
+            "language_id": 71,
+            "source_code": "print(input())",
+            "stdin": "secret",
+        },
+        cookies={"session_id": "runner-student-session"},
+    )
+    assert denied.status_code == 404
 
 
 def test_hidden_contest_problem_is_only_visible_during_active_contest():

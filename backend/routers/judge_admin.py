@@ -24,6 +24,7 @@ from db.schemas import (
     ContestProblemIn,
     ProblemCreateIn,
     ProblemUpdateIn,
+    StudentRunCodeIn,
     StudentSubmissionIn,
 )
 from db.session import get_session
@@ -1376,6 +1377,113 @@ def submit_solution(
     return _grade_and_store_submission(
         account, problem, payload, contest, session, class_id=class_id
     )
+
+
+def _run_student_code(
+    payload: StudentRunCodeIn,
+    problem: Problem,
+    session: Session,
+) -> dict[str, Any]:
+    language = session.get(Language, payload.language_id)
+    if language is None:
+        raise HTTPException(status_code=422, detail="Ngôn ngữ lập trình không hợp lệ")
+    testcase = Testcase(input_data=payload.stdin, expected_output="", point=1)
+    try:
+        result = _run_judge0(
+            payload.source_code,
+            language.language_id,
+            testcase,
+            problem.time_limit,
+            problem.memory_limit,
+            deadline=time.monotonic() + 15,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Dịch vụ chấm bài Judge0 hiện không khả dụng",
+        ) from exc
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail="Phản hồi từ Judge0 không hợp lệ") from exc
+
+    status = result["status"]
+    try:
+        runtime = _judge0_metric(result.get("time"), "runtime")
+        memory = _judge0_metric(result.get("memory"), "memory")
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail="Phản hồi từ Judge0 không hợp lệ") from exc
+    return {
+        "status": status.get("description", "Unknown"),
+        "status_id": status.get("id"),
+        "stdout": result.get("stdout") or "",
+        "stderr": result.get("stderr") or "",
+        "compile_output": result.get("compile_output") or "",
+        "runtime_ms": _metric_as_int(runtime * 1000) if runtime is not None else None,
+        "memory_kb": _metric_as_int(memory),
+    }
+
+
+@student_router.post("/problems/{problem_id}/run")
+def run_public_solution(
+    problem_id: int,
+    payload: StudentRunCodeIn,
+    session_id: str | None = Cookie(default=None),
+    session: Session = Depends(get_session),
+):
+    _require_authenticated_account(session_id, session)
+    problem = session.get(Problem, problem_id)
+    if problem is None or problem.access_modifier != AccessModifier.PUBLIC:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài tập public")
+    if payload.contest_id is not None:
+        raise HTTPException(status_code=422, detail="Bài luyện tập public không thuộc cuộc thi")
+    return _run_student_code(payload, problem, session)
+
+
+@student_router.post("/classes/{class_id}/problems/{problem_id}/run")
+def run_class_solution(
+    class_id: int,
+    problem_id: int,
+    payload: StudentRunCodeIn,
+    session_id: str | None = Cookie(default=None),
+    session: Session = Depends(get_session),
+):
+    account = _require_student_account(session_id, session)
+    student = session.scalar(select(Student).where(Student.account_id == account.account_id))
+    if student is None or session.scalar(
+        select(StudentClass).where(
+            StudentClass.class_id == class_id,
+            StudentClass.student_id == student.student_id,
+        )
+    ) is None:
+        raise HTTPException(status_code=403, detail="Bạn chưa tham gia lớp này")
+    if session.get(AcademicClassProblem, (class_id, problem_id)) is None:
+        raise HTTPException(status_code=404, detail="Bài tập không thuộc lớp này")
+    problem = session.get(Problem, problem_id)
+    if problem is None:
+        raise HTTPException(status_code=404, detail="Bài tập không tồn tại")
+    if (
+        problem.access_modifier == AccessModifier.HIDDEN
+        and problem.created_by != account.account_id
+        and payload.contest_id is None
+    ):
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài tập")
+
+    if payload.contest_id is not None:
+        if session.get(AcademicClassContest, (class_id, payload.contest_id)) is None:
+            raise HTTPException(status_code=404, detail="Cuộc thi không thuộc lớp này")
+        if session.get(ContestProblem, (payload.contest_id, problem_id)) is None:
+            raise HTTPException(status_code=404, detail="Bài tập không thuộc cuộc thi này")
+        contest = session.get(Contest, payload.contest_id)
+        if contest is None:
+            raise HTTPException(status_code=404, detail="Không tìm thấy cuộc thi")
+        _require_active_contest(contest)
+        if not _contest_hidden_problem_visible_to_student(
+            session, account, contest, problem, class_id
+        ):
+            raise HTTPException(status_code=404, detail="Không tìm thấy bài tập trong cuộc thi")
+
+    return _run_student_code(payload, problem, session)
 
 
 def _grade_and_store_submission(
